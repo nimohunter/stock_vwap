@@ -10,7 +10,6 @@ import {
   CandlestickSeries,
   LineSeries,
   HistogramSeries,
-  createSeriesMarkers,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/alphavantage';
 import { VwapBands } from '@/app/lib/vwap';
@@ -119,16 +118,6 @@ export default function VwapChart({ bars, vwapBands }: Props) {
     b1lRef.current?.setData(vwapBands.map((p) => ({ time: toTime(p.date), value: p.lower1 })));
     b2lRef.current?.setData(vwapBands.map((p) => ({ time: toTime(p.date), value: p.lower2 })));
 
-    // Mark the anchor date
-    createSeriesMarkers(b0Ref.current, [
-      {
-        time: toTime(vwapBands[0].date),
-        position: 'belowBar',
-        color: '#3b82f6',
-        shape: 'arrowUp',
-        text: `Anchor ${vwapBands[0].date}`,
-      },
-    ]);
   }, [vwapBands]);
 
   return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />;

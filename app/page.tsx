@@ -15,11 +15,11 @@ export default function Home() {
   const [input, setInput] = useState('NVDA');
   const [bars, setBars] = useState<DailyBar[]>([]);
   const [vwapBands, setVwapBands] = useState<VwapBands[]>([]);
-  const [period, setPeriod] = useState<'1y' | '2y'>('1y');
+  const [period, setPeriod] = useState<'6m' | '1y' | '2y'>('1y');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (sym: string, p: '1y' | '2y') => {
+  const fetchData = useCallback(async (sym: string, p: '6m' | '1y' | '2y') => {
     setLoading(true);
     setError(null);
     setBars([]);
@@ -53,10 +53,10 @@ export default function Home() {
         <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
-            <p className="text-slate-400 text-sm mt-1">Anchored VWAP with ±1σ / ±2σ bands</p>
+            <p className="text-slate-400 text-sm mt-1">Rolling VWAP with ±1σ / ±2σ bands</p>
           </div>
           <div className="flex rounded-lg overflow-hidden border border-slate-600">
-            {(['1y', '2y'] as const).map((p) => (
+            {(['6m', '1y', '2y'] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
