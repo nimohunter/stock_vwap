@@ -16,8 +16,13 @@ export async function GET(req: NextRequest) {
     const allBars = loadLocalBars(symbol);
     const period = req.nextUrl.searchParams.get('period') ?? '1y';
     const window = PERIOD_WINDOWS[period] ?? 252;
+
+    // Compute rolling VWAP on ALL data so every displayed bar has a full window
+    const allBands = computeRollingVwapBands(allBars, window);
+
+    // Display only the last N bars (chart view), VWAP is already fully warmed up
     const bars = allBars.slice(-window);
-    const vwapBands = computeRollingVwapBands(bars, window);
+    const vwapBands = allBands.slice(-window);
 
     return NextResponse.json(
       { symbol, bars, vwapBands },
