@@ -9,6 +9,7 @@ import {
   CrosshairMode,
   CandlestickSeries,
   LineSeries,
+  HistogramSeries,
   createSeriesMarkers,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/alphavantage';
@@ -21,6 +22,7 @@ interface Props {
 
 type CandleSeries = ISeriesApi<'Candlestick'>;
 type LineSer = ISeriesApi<'Line'>;
+type HistSeries = ISeriesApi<'Histogram'>;
 
 function toTime(date: string) {
   return date as `${number}-${number}-${number}`;
@@ -32,6 +34,7 @@ export default function VwapChart({ bars, vwapBands }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<CandleSeries | null>(null);
+  const volumeRef = useRef<HistSeries | null>(null);
   const b2uRef = useRef<LineSer | null>(null);
   const b1uRef = useRef<LineSer | null>(null);
   const b0Ref  = useRef<LineSer | null>(null);
@@ -66,6 +69,16 @@ export default function VwapChart({ bars, vwapBands }: Props) {
       wickDownColor: '#ef4444',
     });
 
+    volumeRef.current = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
     b2uRef.current = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, ...BAND_OPTS });
     b1uRef.current = chart.addSeries(LineSeries, { color: '#eab308', lineWidth: 1, ...BAND_OPTS });
     b0Ref.current  = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 2, lastValueVisible: true, priceLineVisible: false });
@@ -87,6 +100,13 @@ export default function VwapChart({ bars, vwapBands }: Props) {
     if (!candleRef.current) return;
     candleRef.current.setData(
       bars.map((b) => ({ time: toTime(b.date), open: b.open, high: b.high, low: b.low, close: b.close }))
+    );
+    volumeRef.current?.setData(
+      bars.map((b) => ({
+        time: toTime(b.date),
+        value: b.volume,
+        color: b.close >= b.open ? '#22c55e60' : '#ef444460',
+      }))
     );
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
