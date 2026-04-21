@@ -22,6 +22,9 @@ for ticker in TICKERS:
     print(f'Downloading {ticker}...', end=' ', flush=True)
     try:
         df = yf.download(ticker, period=PERIOD, interval='1d', auto_adjust=True, progress=False)
+        # Newer yfinance returns MultiIndex columns — flatten them
+        if isinstance(df.columns, __import__('pandas').MultiIndex):
+            df.columns = df.columns.droplevel(1)
         df = df.dropna()
         bars = [
             {

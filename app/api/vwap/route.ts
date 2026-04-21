@@ -9,9 +9,10 @@ export async function GET(req: NextRequest) {
   try {
     const bars = loadLocalBars(symbol);
 
-    // Anchor from 1 year before the last bar
+    // Anchor from 1 or 2 years before the last bar
+    const years = req.nextUrl.searchParams.get('period') === '2y' ? 2 : 1;
     const lastDate = new Date(bars[bars.length - 1].date);
-    lastDate.setFullYear(lastDate.getFullYear() - 1);
+    lastDate.setFullYear(lastDate.getFullYear() - years);
     const anchorDate = lastDate.toISOString().slice(0, 10);
 
     const vwapBands = computeAnchoredVwapBands(bars, anchorDate);

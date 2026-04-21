@@ -15,16 +15,17 @@ export default function Home() {
   const [input, setInput] = useState('NVDA');
   const [bars, setBars] = useState<DailyBar[]>([]);
   const [vwapBands, setVwapBands] = useState<VwapBands[]>([]);
+  const [period, setPeriod] = useState<'1y' | '2y'>('1y');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (sym: string) => {
+  const fetchData = useCallback(async (sym: string, p: '1y' | '2y') => {
     setLoading(true);
     setError(null);
     setBars([]);
     setVwapBands([]);
     try {
-      const res = await fetch(`/api/vwap?symbol=${sym}`);
+      const res = await fetch(`/api/vwap?symbol=${sym}&period=${p}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setBars(data.bars ?? []);
@@ -36,7 +37,7 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => { fetchData(symbol); }, [symbol, fetchData]);
+  useEffect(() => { fetchData(symbol, period); }, [symbol, period, fetchData]);
 
   const handleSearch = () => {
     const s = input.trim().toUpperCase();
@@ -49,9 +50,24 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-900 text-white p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
-          <p className="text-slate-400 text-sm mt-1">1-Year Anchored VWAP with ±1σ / ±2σ bands</p>
+        <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
+            <p className="text-slate-400 text-sm mt-1">Anchored VWAP with ±1σ / ±2σ bands</p>
+          </div>
+          <div className="flex rounded-lg overflow-hidden border border-slate-600">
+            {(['1y', '2y'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-5 py-2 text-sm font-medium transition-colors ${
+                  period === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {p.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Ticker input */}

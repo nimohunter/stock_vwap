@@ -14,16 +14,17 @@ export interface VwapBands {
   lower2: number;
 }
 
+const tp = (b: DailyBar) => (b.high + b.low + b.close) / 3;
+
 export function computeRollingVwapBands(bars: DailyBar[], window = 252): VwapBands[] {
   const result: VwapBands[] = [];
   for (let i = 0; i < bars.length; i++) {
     const slice = bars.slice(Math.max(0, i - window + 1), i + 1);
     const cumV = slice.reduce((s, b) => s + b.volume, 0);
-    const cumPV = slice.reduce((s, b) => s + b.close * b.volume, 0);
-    const cumPV2 = slice.reduce((s, b) => s + b.close * b.close * b.volume, 0);
+    const cumPV = slice.reduce((s, b) => s + tp(b) * b.volume, 0);
+    const cumPV2 = slice.reduce((s, b) => s + tp(b) * tp(b) * b.volume, 0);
     if (cumV === 0) continue;
     const vwap = cumPV / cumV;
-    // Volume-weighted variance: E[X²] - E[X]²
     const sd = Math.sqrt(Math.max(0, cumPV2 / cumV - vwap * vwap));
     result.push({
       date: bars[i].date,
@@ -38,7 +39,6 @@ export function computeRollingVwapBands(bars: DailyBar[], window = 252): VwapBan
 }
 
 export function computeAnchoredVwapBands(bars: DailyBar[], anchorDate: string): VwapBands[] {
-  // Start the day AFTER the anchor date
   const idx = bars.findIndex((b) => b.date > anchorDate);
   if (idx === -1) return [];
 
@@ -46,8 +46,9 @@ export function computeAnchoredVwapBands(bars: DailyBar[], anchorDate: string): 
   let cumPV = 0, cumPV2 = 0, cumV = 0;
 
   for (const bar of bars.slice(idx)) {
-    cumPV += bar.close * bar.volume;
-    cumPV2 += bar.close * bar.close * bar.volume;
+    const price = tp(bar);
+    cumPV += price * bar.volume;
+    cumPV2 += price * price * bar.volume;
     cumV += bar.volume;
     if (cumV === 0) continue;
     const vwap = cumPV / cumV;
