@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Stock VWAP Analyzer
+
+A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built with Next.js, TradingView Lightweight Charts, and offline daily OHLCV data.
+
+**Live:** https://stockvwap.vercel.app
+
+## Features
+
+- **1-Year / 2-Year Anchored VWAP** — toggle between 1Y and 2Y anchor periods
+- **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
+- **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
+- **10 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, VOO, SPMO, GLD
+- **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
+- **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`
+
+## Tech Stack
+
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS
+- TradingView Lightweight Charts v5
+- Offline OHLCV data in `app/data/*.json` (2 years per ticker)
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Download stock data (first time, or to refresh)
+
+Run from your **local machine** (Yahoo Finance rate-limits cloud servers):
+
+```bash
+pip install yfinance
+python3 scripts/download-data.py
+```
+
+This saves 2 years of daily OHLCV for all 10 tickers to `app/data/*.json`.
+
+### 3. Start the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`predev` automatically runs `scripts/fetch-data.mjs` to refresh any data older than 20 hours before starting Next.js.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3001](http://localhost:3001).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Data Refresh
 
-## Learn More
+| Script | When to use |
+|--------|-------------|
+| `python3 scripts/download-data.py` | Full 2-year download from your local machine |
+| `node scripts/fetch-data.mjs` | Incremental refresh (auto-runs on `dev`/`build`) |
 
-To learn more about Next.js, take a look at the following resources:
+`fetch-data.mjs` tries Yahoo Finance first, falls back to Alpha Vantage (requires `ALPHA_VANTAGE_API_KEY` in `.env.local`), and merges new bars with existing history so no data is lost.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# .env.local
+ALPHA_VANTAGE_API_KEY=your_key_here   # fallback data source, free at alphavantage.co
+```
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+vercel --prod
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`prebuild` runs `fetch-data.mjs` automatically during every Vercel build so the deployed app has the latest available data.
+
+To keep full 2-year history on Vercel, periodically commit updated `app/data/*.json` files:
+
+```bash
+python3 scripts/download-data.py   # run locally
+git add app/data/
+git commit -m "refresh data"
+git push
+vercel --prod
+```
