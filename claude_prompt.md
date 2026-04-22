@@ -11,16 +11,18 @@ Build a personal web app for VWAP analysis on US stocks, deployable to Vercel. N
 
 ## Tickers
 Fixed set of 10: NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, VOO, SPMO, GLD
+No free-text input — ticker buttons only.
 
 ## VWAP Feature
 
-### Anchored VWAP with SD Bands
-- Anchor date = 1 year or 2 years before the last available bar (user-selectable via 1Y/2Y toggle)
-- Formula: typical price `(High + Low + Close) / 3`, volume-weighted from anchor date
-- Cumulative from anchor: `VWAP = sum(TP × Volume) / sum(Volume)`
+### Rolling VWAP with SD Bands
+- Window toggle: 3M / 6M / 1Y (63 / 126 / 252 bars) — labeled "VWAP Window" in the UI
+- Chart always shows full 2Y of price history; the toggle controls only the rolling window size
+- Formula: typical price `(High + Low + Close) / 3`, volume-weighted over a sliding window
+- Rolling: `VWAP = sum(TP × Volume) / sum(Volume)` over the last N bars
 - Standard deviation bands using volume-weighted variance: `SD = sqrt(E[TP²] - E[TP]²)`
 - Display 5 lines: +2σ (red), +1σ (yellow), VWAP (blue), -1σ (green), -2σ (pink)
-- Anchor marker shown on chart at the start date
+- Compute rolling VWAP on ALL available history before slicing the display window, so every bar has a fully-warmed window
 
 ## Data Pipeline
 - `app/data/*.json` — offline OHLCV files, 2 years per ticker
@@ -31,22 +33,23 @@ Fixed set of 10: NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, VOO, SPMO, GLD
   - Merges new bars with existing history to preserve full date range
 
 ## API Routes
-- `GET /api/vwap?symbol=NVDA&period=1y` — returns bars + anchored VWAP bands
-  - `period` = `1y` (default) or `2y`
-  - Anchor date computed server-side as `lastBarDate - period`
+- `GET /api/vwap?symbol=NVDA&period=1y` — returns all bars + rolling VWAP bands
+  - `period` = `3m` / `6m` / `1y` (default)
+  - Returns full 2Y bars; VWAP computed with sliding window of size period
 
 ## UI
-- Ticker quick-pick buttons for all 10 tickers + free-text input
-- 1Y / 2Y toggle (top right)
-- TradingView Lightweight Charts candlestick with 5 VWAP band lines
+- Ticker quick-pick buttons for all 10 tickers (no free-text input)
+- "VWAP Window" toggle top-right: 3M / 6M / 1Y
+- TradingView Lightweight Charts candlestick with 5 VWAP band lines + volume histogram
 - Band price labels hidden (`lastValueVisible: false`) except VWAP center
-- Anchor date marked with arrow on chart
 - Stats panel: current price, VWAP value, % distance, SD zone label, band levels
 
 ## Key Design Decisions
 - Typical price `(H+L+C)/3` is the standard VWAP formula used in professional platforms
+- Rolling (sliding window) VWAP, not anchored/cumulative — gives consistent band width across time
+- Compute on all available data first so every displayed bar has a fully-loaded rolling window
+- Always display full 2Y history — window toggle changes VWAP sensitivity, not chart zoom
 - Offline-first: data lives in JSON files for fast loads and no API rate limits at runtime
 - Auto-refresh via `predev`/`prebuild` hooks keeps data current without manual steps
 - Vercel deployment uses data bundled at build time (filesystem is read-only at runtime)
-- No earnings anchor: simplified to calendar-year anchor (1Y or 2Y from last bar)
 - Fixed ticker list: avoids arbitrary symbol support, keeps data management simple

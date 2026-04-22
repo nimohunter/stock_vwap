@@ -3,9 +3,9 @@ import { loadLocalBars } from '@/app/lib/localData';
 import { computeRollingVwapBands } from '@/app/lib/vwap';
 
 const PERIOD_WINDOWS: Record<string, number> = {
+  '3m': 63,
   '6m': 126,
   '1y': 252,
-  '2y': 504,
 };
 
 export async function GET(req: NextRequest) {
@@ -17,12 +17,9 @@ export async function GET(req: NextRequest) {
     const period = req.nextUrl.searchParams.get('period') ?? '1y';
     const window = PERIOD_WINDOWS[period] ?? 252;
 
-    // Compute rolling VWAP on ALL data so every displayed bar has a full window
-    const allBands = computeRollingVwapBands(allBars, window);
-
-    // Display only the last N bars (chart view), VWAP is already fully warmed up
-    const bars = allBars.slice(-window);
-    const vwapBands = allBands.slice(-window);
+    // Compute rolling VWAP on ALL data — always display full 2Y history
+    const vwapBands = computeRollingVwapBands(allBars, window);
+    const bars = allBars;
 
     return NextResponse.json(
       { symbol, bars, vwapBands },

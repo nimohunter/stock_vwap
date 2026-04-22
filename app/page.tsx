@@ -12,14 +12,13 @@ const TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'VOO',
 
 export default function Home() {
   const [symbol, setSymbol] = useState('NVDA');
-  const [input, setInput] = useState('NVDA');
   const [bars, setBars] = useState<DailyBar[]>([]);
   const [vwapBands, setVwapBands] = useState<VwapBands[]>([]);
-  const [period, setPeriod] = useState<'6m' | '1y' | '2y'>('1y');
+  const [period, setPeriod] = useState<'3m' | '6m' | '1y'>('1y');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (sym: string, p: '6m' | '1y' | '2y') => {
+  const fetchData = useCallback(async (sym: string, p: '3m' | '6m' | '1y') => {
     setLoading(true);
     setError(null);
     setBars([]);
@@ -39,11 +38,6 @@ export default function Home() {
 
   useEffect(() => { fetchData(symbol, period); }, [symbol, period, fetchData]);
 
-  const handleSearch = () => {
-    const s = input.trim().toUpperCase();
-    if (s) setSymbol(s);
-  };
-
   const currentPrice = bars.length ? bars[bars.length - 1].close : 0;
   const lastBands = vwapBands.length ? vwapBands[vwapBands.length - 1] : null;
 
@@ -53,54 +47,40 @@ export default function Home() {
         <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
-            <p className="text-slate-400 text-sm mt-1">Rolling VWAP with ±1σ / ±2σ bands</p>
+            <p className="text-slate-400 text-sm mt-1">2Y price history · rolling VWAP with ±1σ / ±2σ bands</p>
           </div>
-          <div className="flex rounded-lg overflow-hidden border border-slate-600">
-            {(['6m', '1y', '2y'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-5 py-2 text-sm font-medium transition-colors ${
-                  period === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                {p.toUpperCase()}
-              </button>
-            ))}
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-xs text-slate-500">VWAP Window</span>
+            <div className="flex rounded-lg overflow-hidden border border-slate-600">
+              {(['3m', '6m', '1y'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-5 py-2 text-sm font-medium transition-colors ${
+                    period === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {p.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Ticker input */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          <div className="flex gap-2 flex-1 min-w-0">
-            <input
-              className="bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 flex-1 min-w-0 uppercase"
-              placeholder="Ticker symbol"
-              value={input}
-              onChange={(e) => setInput(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
+        <div className="flex gap-2 flex-wrap mb-6">
+          {TICKERS.map((t) => (
             <button
-              onClick={handleSearch}
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 rounded-lg font-medium transition-colors"
+              key={t}
+              onClick={() => setSymbol(t)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                symbol === t
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+              }`}
             >
-              {loading ? 'Loading...' : 'Go'}
+              {t}
             </button>
-          </div>
-          <div className="flex gap-1.5 flex-wrap">
-            {TICKERS.map((t) => (
-              <button
-                key={t}
-                onClick={() => { setInput(t); setSymbol(t); }}
-                className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                  symbol === t ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
 
         {error && (

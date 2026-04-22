@@ -6,7 +6,8 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 
 ## Features
 
-- **1-Year / 2-Year Anchored VWAP** — toggle between 1Y and 2Y anchor periods
+- **Rolling VWAP** — 3M / 6M / 1Y window toggle (63 / 126 / 252 bars)
+- **Full 2Y Price History** — chart always shows all available data; window controls only the VWAP computation
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
 - **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
 - **10 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, VOO, SPMO, GLD
