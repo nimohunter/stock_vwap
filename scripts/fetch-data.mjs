@@ -3,7 +3,7 @@
  * Auto-refresh stock data before dev/build.
  * - Tries Yahoo Finance first (2 years)
  * - Falls back to Alpha Vantage compact (100 days) if Yahoo is blocked
- * - Skips tickers whose data is less than 20 hours old
+ * - Skips tickers whose last bar date is less than 1 day old
  */
 import fs from 'fs';
 import path from 'path';
@@ -13,14 +13,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'app', 'data');
 const TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'VOO', 'SPMO', 'GLD'];
 const ALPHA_KEY = process.env.ALPHA_VANTAGE_API_KEY ?? '';
-const STALE_MS = 20 * 60 * 60 * 1000; // 20 hours
+const STALE_DAYS = 1; // refetch if last bar is older than this many calendar days
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 function isStale(ticker) {
   const file = path.join(DATA_DIR, `${ticker}.json`);
   if (!fs.existsSync(file)) return true;
-  return Date.now() - fs.statSync(file).mtimeMs > STALE_MS;
+  try {
+    const bars = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!bars.length) return true;
+    const lastDate = bars[bars.length - 1].date; // "YYYY-MM-DD"
+    const lastMs = new Date(lastDate + 'T00:00:00Z').getTime();
+    return Date.now() - lastMs > STALE_DAYS * 24 * 60 * 60 * 1000;
+  } catch {
+    return true;
+  }
 }
 
 async function fetchYahoo(ticker) {
