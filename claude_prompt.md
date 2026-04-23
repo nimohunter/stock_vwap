@@ -52,4 +52,8 @@ No free-text input — ticker buttons only.
 - Offline-first: data lives in JSON files for fast loads and no API rate limits at runtime
 - Auto-refresh via `predev`/`prebuild` hooks keeps data current without manual steps
 - Vercel deployment uses data bundled at build time (filesystem is read-only at runtime)
+- **Known limitation:** data is frozen at each deploy and does not auto-update between deploys. Three options to address (not yet implemented — user to choose):
+  - A) GitHub Actions cron: daily workflow triggers a Vercel deploy hook (no code change)
+  - B) Vercel Cron + Vercel Blob: cron → API route fetches Yahoo → writes to Blob; API reads Blob at runtime
+  - C) Live fetch in API route: drop JSON files, fetch Yahoo Finance in `/api/vwap` with `revalidate` caching
 - Fixed ticker list: avoids arbitrary symbol support, keeps data management simple

@@ -83,3 +83,9 @@ git commit -m "refresh data"
 git push
 vercel --prod
 ```
+
+> **⚠️ Data staleness warning:** Vercel's filesystem is read-only at runtime. Data is frozen at build time and does **not** update automatically between deploys. Options to fix this (not yet implemented — choose one):
+>
+> - **A) GitHub Actions cron** — daily scheduled workflow triggers a Vercel deploy hook; no code change needed
+> - **B) Vercel Cron + Vercel Blob** — cron calls an API route that fetches from Yahoo and writes to Blob; API reads from Blob at runtime
+> - **C) Live fetch in API route** — remove JSON files; `/api/vwap` fetches Yahoo Finance directly with Next.js `revalidate` caching
