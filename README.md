@@ -84,8 +84,10 @@ git push
 vercel --prod
 ```
 
-> **⚠️ Data staleness warning:** Vercel's filesystem is read-only at runtime. Data is frozen at build time and does **not** update automatically between deploys. Options to fix this (not yet implemented — choose one):
->
-> - **A) GitHub Actions cron** — daily scheduled workflow triggers a Vercel deploy hook; no code change needed
-> - **B) Vercel Cron + Vercel Blob** — cron calls an API route that fetches from Yahoo and writes to Blob; API reads from Blob at runtime
-> - **C) Live fetch in API route** — remove JSON files; `/api/vwap` fetches Yahoo Finance directly with Next.js `revalidate` caching
+## Automated weekly refresh
+
+`.github/workflows/refresh-data.yml` runs every Saturday at 06:00 UTC (after Friday's US close), executes `fetch-data.mjs`, and commits any new bars back to `master`. Vercel auto-deploys on the push, so the live site always has fresh data without a manual rebuild.
+
+Manual trigger: GitHub → Actions → **Refresh stock data** → **Run workflow**.
+
+To enable the Alpha Vantage fallback in the workflow, add `ALPHA_VANTAGE_API_KEY` under **Settings → Secrets and variables → Actions**.
