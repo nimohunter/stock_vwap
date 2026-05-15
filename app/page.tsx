@@ -15,6 +15,8 @@ export default function Home() {
   const [bars, setBars] = useState<DailyBar[]>([]);
   const [vwapBands, setVwapBands] = useState<VwapBands[]>([]);
   const [period, setPeriod] = useState<'3m' | '6m' | '1y'>('1y');
+  const [showSma50, setShowSma50] = useState(false);
+  const [showSma200, setShowSma200] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,20 +51,43 @@ export default function Home() {
             <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
             <p className="text-slate-400 text-sm mt-1">2Y price history · rolling VWAP with ±1σ / ±2σ bands</p>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-xs text-slate-500">VWAP Window</span>
-            <div className="flex rounded-lg overflow-hidden border border-slate-600">
-              {(['3m', '6m', '1y'] as const).map((p) => (
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-xs text-slate-500">VWAP Window</span>
+              <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                {(['3m', '6m', '1y'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-5 py-2 text-sm font-medium transition-colors ${
+                      period === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {p.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-xs text-slate-500">Moving Averages</span>
+              <div className="flex rounded-lg overflow-hidden border border-slate-600">
                 <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-5 py-2 text-sm font-medium transition-colors ${
-                    period === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  onClick={() => setShowSma50((v) => !v)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    showSma50 ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
-                  {p.toUpperCase()}
+                  SMA 50
                 </button>
-              ))}
+                <button
+                  onClick={() => setShowSma200((v) => !v)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    showSma200 ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  SMA 200
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -96,7 +121,7 @@ export default function Home() {
         ) : bars.length > 0 ? (
           <>
             <div className="bg-slate-800 rounded-lg p-2">
-              <VwapChart bars={bars} vwapBands={vwapBands} />
+              <VwapChart bars={bars} vwapBands={vwapBands} showSma50={showSma50} showSma200={showSma200} />
             </div>
             <StatsPanel currentPrice={currentPrice} bands={lastBands} />
           </>
@@ -109,6 +134,12 @@ export default function Home() {
             <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-blue-400 inline-block" /> VWAP</span>
             <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-green-500 inline-block" /> -1σ</span>
             <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-pink-500 inline-block" /> -2σ</span>
+            {showSma50 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-orange-400 inline-block" /> SMA 50</span>
+            )}
+            {showSma200 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> SMA 200</span>
+            )}
           </div>
         )}
       </div>

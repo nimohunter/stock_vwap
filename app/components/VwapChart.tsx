@@ -12,11 +12,13 @@ import {
   HistogramSeries,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/alphavantage';
-import { VwapBands } from '@/app/lib/vwap';
+import { VwapBands, computeSMA } from '@/app/lib/vwap';
 
 interface Props {
   bars: DailyBar[];
   vwapBands: VwapBands[];
+  showSma50?: boolean;
+  showSma200?: boolean;
 }
 
 type CandleSeries = ISeriesApi<'Candlestick'>;
@@ -29,7 +31,7 @@ function toTime(date: string) {
 
 const BAND_OPTS = { lastValueVisible: false, priceLineVisible: false } as const;
 
-export default function VwapChart({ bars, vwapBands }: Props) {
+export default function VwapChart({ bars, vwapBands, showSma50 = false, showSma200 = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<CandleSeries | null>(null);
@@ -39,6 +41,8 @@ export default function VwapChart({ bars, vwapBands }: Props) {
   const b0Ref  = useRef<LineSer | null>(null);
   const b1lRef = useRef<LineSer | null>(null);
   const b2lRef = useRef<LineSer | null>(null);
+  const sma50Ref  = useRef<LineSer | null>(null);
+  const sma200Ref = useRef<LineSer | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -83,6 +87,8 @@ export default function VwapChart({ bars, vwapBands }: Props) {
     b0Ref.current  = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 2, lastValueVisible: true, priceLineVisible: false });
     b1lRef.current = chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, ...BAND_OPTS });
     b2lRef.current = chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, ...BAND_OPTS });
+    sma50Ref.current  = chart.addSeries(LineSeries, { color: '#fb923c', lineWidth: 2, visible: false, ...BAND_OPTS });
+    sma200Ref.current = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, visible: false, ...BAND_OPTS });
 
     const handleResize = () => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -107,8 +113,22 @@ export default function VwapChart({ bars, vwapBands }: Props) {
         color: b.close >= b.open ? '#22c55e60' : '#ef444460',
       }))
     );
+    sma50Ref.current?.setData(
+      computeSMA(bars, 50).map((p) => ({ time: toTime(p.date), value: p.value }))
+    );
+    sma200Ref.current?.setData(
+      computeSMA(bars, 200).map((p) => ({ time: toTime(p.date), value: p.value }))
+    );
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
+
+  useEffect(() => {
+    sma50Ref.current?.applyOptions({ visible: showSma50 });
+  }, [showSma50]);
+
+  useEffect(() => {
+    sma200Ref.current?.applyOptions({ visible: showSma200 });
+  }, [showSma200]);
 
   useEffect(() => {
     if (!b0Ref.current || vwapBands.length === 0) return;
