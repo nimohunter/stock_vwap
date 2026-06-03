@@ -8,7 +8,7 @@ import { VwapBands } from './lib/vwap';
 
 const VwapChart = dynamic(() => import('./components/VwapChart'), { ssr: false });
 
-const TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'VOO', 'SPMO', 'GLD'];
+const TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'MU', 'VOO', 'SPMO', 'GLD'];
 
 export default function Home() {
   const [symbol, setSymbol] = useState('NVDA');

@@ -17,4 +17,4 @@ export function loadLocalBars(symbol: string): DailyBar[] {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as DailyBar[];
 }
 
-export const LOCAL_TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'VOO', 'SPMO', 'GLD'];
+export const LOCAL_TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'MU', 'VOO', 'SPMO', 'GLD'];

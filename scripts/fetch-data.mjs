@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'app', 'data');
-const TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'VOO', 'SPMO', 'GLD'];
+const TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'MU', 'VOO', 'SPMO', 'GLD'];
 const ALPHA_KEY = process.env.ALPHA_VANTAGE_API_KEY ?? '';
 const STALE_DAYS = 1; // refetch if last bar is older than this many calendar days
 
