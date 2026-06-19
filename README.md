@@ -29,18 +29,38 @@ time for caution.
    often fails on hosted environments.
 2. **Computed fallback** — when CNN is unavailable, a CNN-style index is computed from
    live Yahoo Finance data and the badge switches from `CNN` to `estimate`. The "how?"
-   toggle on the banner explains this and shows the sub-signal breakdown. Components,
-   each scored 0–100 (100 = max greed) and averaged:
+   toggle on the banner explains this and shows the sub-signal breakdown.
 
-   | Sub-signal | What it measures |
-   |------------|------------------|
-   | Market Momentum | S&P 500 vs its 125-day moving average |
-   | Price Strength | Where the S&P sits in its 52-week high/low range |
-   | Volatility (VIX) | VIX vs its 50-day average (low = greed) |
-   | Safe Haven Demand | 20-day return of stocks vs bonds (TLT) |
-   | Junk Bond Demand | 20-day return of junk (HYG) vs investment-grade (LQD) |
+### How the estimate is calculated
 
-   The computed number is an estimate and won't exactly match CNN's official value.
+1. **Fetch 1 year of daily closes** (in parallel, tolerating individual failures) for
+   five symbols: `^GSPC` (S&P 500), `^VIX`, `TLT` (long bonds), `HYG` (junk bonds),
+   `LQD` (investment-grade bonds).
+
+2. **Score each sub-signal 0–100** (100 = maximum greed) with a clamped linear map:
+
+   ```
+   norm(x, lo, hi) = clamp01((x - lo) / (hi - lo)) * 100
+   ```
+
+   | Sub-signal | Raw value `x` | `lo` → `hi` |
+   |------------|---------------|-------------|
+   | Market Momentum | S&P close ÷ its 125-day average − 1 | −0.10 → +0.10 |
+   | Price Strength | S&P close, within its 52-week low/high range | 52w low → 52w high |
+   | Volatility (VIX) | VIX ÷ its 50-day average | 1.15 → 0.85 *(inverted: low VIX = greed)* |
+   | Safe Haven Demand | 20-day return of S&P − 20-day return of TLT | −0.05 → +0.05 |
+   | Junk Bond Demand | 20-day return of HYG − 20-day return of LQD | −0.03 → +0.03 |
+
+3. **Average** the available components and round to get the 0–100 score. (A symbol that
+   fails to fetch is simply dropped from the average.)
+
+4. **Map to a label** (same bands as CNN): `<25` Extreme Fear · `25–44` Fear ·
+   `45–55` Neutral · `56–75` Greed · `>75` Extreme Greed.
+
+> The `lo`/`hi` bounds are hand-chosen heuristics and the index uses 5 signals where CNN
+> uses 7 (CNN's put/call ratio and NYSE breadth aren't cleanly available from free data).
+> So the computed number is **directionally** aligned with CNN but won't match it exactly —
+> hence the `estimate` badge. Source of truth: [`app/lib/fearGreed.ts`](app/lib/fearGreed.ts).
 
 ## Tech Stack
 
@@ -66,7 +86,7 @@ pip install yfinance
 python3 scripts/download-data.py
 ```
 
-This saves 2 years of daily OHLCV for all 10 tickers to `app/data/*.json`.
+This saves 2 years of daily OHLCV for all 11 tickers to `app/data/*.json`.
 
 ### 3. Start the dev server
 
