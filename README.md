@@ -10,9 +10,37 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Full 2Y Price History** — chart always shows all available data; window controls only the VWAP computation
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
 - **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
-- **10 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, VOO, SPMO, GLD
+- **11 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, MU, VOO, SPMO, GLD
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
+- **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`
+
+## Fear & Greed Gauge
+
+A banner at the top of the page shows current market sentiment on a 0–100 scale
+(Extreme Fear → Extreme Greed), mirroring [CNN's Fear & Greed Index](https://edition.cnn.com/markets/fear-and-greed).
+Extreme readings are visually highlighted (⚡ + colored ring) because they can act
+as contrarian signals — extreme fear may flag a buying opportunity, extreme greed a
+time for caution.
+
+**Data source (`app/lib/fearGreed.ts`, served by `app/api/fear-greed`):**
+
+1. **CNN first** — tries CNN's official index. CNN bot-blocks data-center IPs, so this
+   often fails on hosted environments.
+2. **Computed fallback** — when CNN is unavailable, a CNN-style index is computed from
+   live Yahoo Finance data and the badge switches from `CNN` to `estimate`. The "how?"
+   toggle on the banner explains this and shows the sub-signal breakdown. Components,
+   each scored 0–100 (100 = max greed) and averaged:
+
+   | Sub-signal | What it measures |
+   |------------|------------------|
+   | Market Momentum | S&P 500 vs its 125-day moving average |
+   | Price Strength | Where the S&P sits in its 52-week high/low range |
+   | Volatility (VIX) | VIX vs its 50-day average (low = greed) |
+   | Safe Haven Demand | 20-day return of stocks vs bonds (TLT) |
+   | Junk Bond Demand | 20-day return of junk (HYG) vs investment-grade (LQD) |
+
+   The computed number is an estimate and won't exactly match CNN's official value.
 
 ## Tech Stack
 

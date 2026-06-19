@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import StatsPanel from './components/StatsPanel';
+import FearGreedGauge from './components/FearGreedGauge';
 import { DailyBar } from './lib/alphavantage';
 import { VwapBands } from './lib/vwap';
 
@@ -90,6 +91,10 @@ export default function Home() {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <FearGreedGauge />
         </div>
 
         <div className="flex gap-2 flex-wrap mb-6">
