@@ -18,6 +18,9 @@ export default function Home() {
   const [period, setPeriod] = useState<'3m' | '6m' | '1y'>('1y');
   const [showSma50, setShowSma50] = useState(false);
   const [showSma200, setShowSma200] = useState(false);
+  const [showEma50, setShowEma50] = useState(false);
+  const [showEma200, setShowEma200] = useState(false);
+  const [showEmaCloud, setShowEmaCloud] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +91,30 @@ export default function Home() {
                 >
                   SMA 200
                 </button>
+                <button
+                  onClick={() => setShowEma50((v) => !v)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    showEma50 ? 'bg-cyan-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  EMA 50
+                </button>
+                <button
+                  onClick={() => setShowEma200((v) => !v)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    showEma200 ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  EMA 200
+                </button>
+                <button
+                  onClick={() => setShowEmaCloud((v) => !v)}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    showEmaCloud ? 'bg-teal-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  EMA Cloud 34/50
+                </button>
               </div>
             </div>
           </div>
@@ -126,7 +153,7 @@ export default function Home() {
         ) : bars.length > 0 ? (
           <>
             <div className="bg-slate-800 rounded-lg p-2">
-              <VwapChart bars={bars} vwapBands={vwapBands} showSma50={showSma50} showSma200={showSma200} />
+              <VwapChart bars={bars} vwapBands={vwapBands} showSma50={showSma50} showSma200={showSma200} showEma50={showEma50} showEma200={showEma200} showEmaCloud={showEmaCloud} />
             </div>
             <StatsPanel currentPrice={currentPrice} bands={lastBands} />
           </>
@@ -144,6 +171,18 @@ export default function Home() {
             )}
             {showSma200 && (
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> SMA 200</span>
+            )}
+            {showEma50 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-cyan-400 inline-block" /> EMA 50</span>
+            )}
+            {showEma200 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-rose-500 inline-block" /> EMA 200</span>
+            )}
+            {showEmaCloud && (
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-2.5 bg-teal-400/30 border-y border-y-teal-400 inline-block" /> EMA Cloud 34/50
+                <span className="text-slate-500">(green = bullish, red = bearish)</span>
+              </span>
             )}
           </div>
         )}

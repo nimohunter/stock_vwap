@@ -12,13 +12,17 @@ import {
   HistogramSeries,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/alphavantage';
-import { VwapBands, computeSMA } from '@/app/lib/vwap';
+import { VwapBands, computeSMA, computeEMA } from '@/app/lib/vwap';
+import { EmaCloudPrimitive, CloudPoint } from './emaCloudPrimitive';
 
 interface Props {
   bars: DailyBar[];
   vwapBands: VwapBands[];
   showSma50?: boolean;
   showSma200?: boolean;
+  showEma50?: boolean;
+  showEma200?: boolean;
+  showEmaCloud?: boolean;
 }
 
 type CandleSeries = ISeriesApi<'Candlestick'>;
@@ -31,7 +35,15 @@ function toTime(date: string) {
 
 const BAND_OPTS = { lastValueVisible: false, priceLineVisible: false } as const;
 
-export default function VwapChart({ bars, vwapBands, showSma50 = false, showSma200 = false }: Props) {
+export default function VwapChart({
+  bars,
+  vwapBands,
+  showSma50 = false,
+  showSma200 = false,
+  showEma50 = false,
+  showEma200 = false,
+  showEmaCloud = false,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<CandleSeries | null>(null);
@@ -43,6 +55,11 @@ export default function VwapChart({ bars, vwapBands, showSma50 = false, showSma2
   const b2lRef = useRef<LineSer | null>(null);
   const sma50Ref  = useRef<LineSer | null>(null);
   const sma200Ref = useRef<LineSer | null>(null);
+  const ema34Ref  = useRef<LineSer | null>(null);
+  const ema50Ref  = useRef<LineSer | null>(null);
+  const cloudRef  = useRef<EmaCloudPrimitive | null>(null);
+  const ema50LineRef  = useRef<LineSer | null>(null);
+  const ema200LineRef = useRef<LineSer | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -90,6 +107,16 @@ export default function VwapChart({ bars, vwapBands, showSma50 = false, showSma2
     sma50Ref.current  = chart.addSeries(LineSeries, { color: '#fb923c', lineWidth: 2, visible: false, ...BAND_OPTS });
     sma200Ref.current = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, visible: false, ...BAND_OPTS });
 
+    // Ripster EMA Cloud (34/50): two thin boundary lines + a trend-colored fill primitive.
+    ema34Ref.current = chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 1, visible: false, ...BAND_OPTS });
+    ema50Ref.current = chart.addSeries(LineSeries, { color: '#818cf8', lineWidth: 1, visible: false, ...BAND_OPTS });
+    cloudRef.current = new EmaCloudPrimitive();
+    candleRef.current.attachPrimitive(cloudRef.current);
+
+    // Standalone EMA 50 / EMA 200 lines (exponential counterparts to the SMA lines).
+    ema50LineRef.current  = chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, visible: false, ...BAND_OPTS });
+    ema200LineRef.current = chart.addSeries(LineSeries, { color: '#f43f5e', lineWidth: 2, visible: false, ...BAND_OPTS });
+
     const handleResize = () => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
     };
@@ -119,6 +146,25 @@ export default function VwapChart({ bars, vwapBands, showSma50 = false, showSma2
     sma200Ref.current?.setData(
       computeSMA(bars, 200).map((p) => ({ time: toTime(p.date), value: p.value }))
     );
+
+    const ema34 = computeEMA(bars, 34);
+    const ema50 = computeEMA(bars, 50);
+    const ema50Data = ema50.map((p) => ({ time: toTime(p.date), value: p.value }));
+    ema34Ref.current?.setData(ema34.map((p) => ({ time: toTime(p.date), value: p.value })));
+    ema50Ref.current?.setData(ema50Data);
+    ema50LineRef.current?.setData(ema50Data);
+    ema200LineRef.current?.setData(
+      computeEMA(bars, 200).map((p) => ({ time: toTime(p.date), value: p.value }))
+    );
+    // Merge into cloud points on dates where both EMAs exist.
+    const fastByDate = new Map(ema34.map((p) => [p.date, p.value]));
+    const cloud: CloudPoint[] = [];
+    for (const p of ema50) {
+      const fast = fastByDate.get(p.date);
+      if (fast !== undefined) cloud.push({ time: toTime(p.date), fast, slow: p.value });
+    }
+    cloudRef.current?.setData(cloud);
+
     chartRef.current?.timeScale().fitContent();
   }, [bars]);
 
@@ -129,6 +175,20 @@ export default function VwapChart({ bars, vwapBands, showSma50 = false, showSma2
   useEffect(() => {
     sma200Ref.current?.applyOptions({ visible: showSma200 });
   }, [showSma200]);
+
+  useEffect(() => {
+    ema34Ref.current?.applyOptions({ visible: showEmaCloud });
+    ema50Ref.current?.applyOptions({ visible: showEmaCloud });
+    cloudRef.current?.setVisible(showEmaCloud);
+  }, [showEmaCloud]);
+
+  useEffect(() => {
+    ema50LineRef.current?.applyOptions({ visible: showEma50 });
+  }, [showEma50]);
+
+  useEffect(() => {
+    ema200LineRef.current?.applyOptions({ visible: showEma200 });
+  }, [showEma200]);
 
   useEffect(() => {
     if (!b0Ref.current || vwapBands.length === 0) return;
