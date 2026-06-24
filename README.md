@@ -11,6 +11,8 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
 - **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
 - **11 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, MU, VOO, SPMO, GLD
+- **Moving Averages** — toggleable SMA 50/200 and EMA 50/200 overlays
+- **Ripster EMA Cloud 34/50** — trend-colored cloud between the 34 and 50 EMAs (see below)
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
 - **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`
@@ -61,6 +63,34 @@ time for caution.
 > uses 7 (CNN's put/call ratio and NYSE breadth aren't cleanly available from free data).
 > So the computed number is **directionally** aligned with CNN but won't match it exactly —
 > hence the `estimate` badge. Source of truth: [`app/lib/fearGreed.ts`](app/lib/fearGreed.ts).
+
+## Moving Averages & Ripster EMA Cloud
+
+The **Moving Averages** control group toggles four overlay lines plus the EMA cloud,
+all computed in [`app/lib/vwap.ts`](app/lib/vwap.ts) and drawn in
+[`app/components/VwapChart.tsx`](app/components/VwapChart.tsx):
+
+| Overlay | Color | Calculation |
+|---------|-------|-------------|
+| SMA 50 / SMA 200 | orange / purple | Simple moving average (rolling mean of closes) |
+| EMA 50 / EMA 200 | cyan / rose | Exponential moving average, `k = 2 / (window + 1)` |
+| EMA Cloud 34/50 | teal fill | Filled band between the EMA 34 and EMA 50 |
+
+**EMA seeding.** The EMA is seeded with the SMA of the first `window` closes, then
+iterated as `ema = close·k + ema_prev·(1 − k)`. This matches TradingView's `ta.ema`
+to within ~0.01% — EMA 34/50 are identical across conventions, and EMA 200 differs by
+about 2 cents on a $190 price (slow EMAs carry a tiny residual seed weight; every
+charting platform shows the same).
+
+**Ripster EMA Cloud.** A custom Lightweight-Charts canvas primitive
+([`app/components/emaCloudPrimitive.ts`](app/components/emaCloudPrimitive.ts)) fills the
+area between the EMA 34 (fast) and EMA 50 (slow) lines:
+
+- **Green** when EMA 34 ≥ EMA 50 → short-term momentum above medium-term (bullish).
+- **Red** when EMA 34 < EMA 50 → bearish.
+
+The cloud is rendered beneath the candles so price action stays readable on top. The
+34/50 pair is one of the most common Ripster cloud settings for swing/trend context.
 
 ## Tech Stack
 
