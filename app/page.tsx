@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import StatsPanel from './components/StatsPanel';
 import FearGreedGauge from './components/FearGreedGauge';
+import SentimentRating from './components/SentimentRating';
 import { DailyBar } from './lib/alphavantage';
 import { VwapBands } from './lib/vwap';
 
@@ -152,6 +153,9 @@ export default function Home() {
           </div>
         ) : bars.length > 0 ? (
           <>
+            <div className="mb-4">
+              <SentimentRating symbol={symbol} bars={bars} />
+            </div>
             <div className="bg-slate-800 rounded-lg p-2">
               <VwapChart bars={bars} vwapBands={vwapBands} showSma50={showSma50} showSma200={showSma200} showEma50={showEma50} showEma200={showEma200} showEmaCloud={showEmaCloud} />
             </div>

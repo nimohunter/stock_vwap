@@ -15,6 +15,7 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Ripster EMA Cloud 34/50** — trend-colored cloud between the 34 and 50 EMAs (see below)
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
 - **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
+- **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with a signal breakdown (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`
 
 ## Fear & Greed Gauge
@@ -91,6 +92,29 @@ area between the EMA 34 (fast) and EMA 50 (slow) lines:
 
 The cloud is rendered beneath the candles so price action stays readable on top. The
 34/50 pair is one of the most common Ripster cloud settings for swing/trend context.
+
+## Technical Sentiment Rating
+
+Each stock gets a per-symbol **Strong Sell → Strong Buy** rating (0–100) shown above the
+chart, computed entirely from its own price/volume in
+[`app/lib/sentiment.ts`](app/lib/sentiment.ts) — no analyst or news data (those sources
+aren't reliably reachable server-side). Signals are organized into **three
+equally-weighted groups** so trend alignment can't dominate the score:
+
+| Group | Signals | Vote is bullish when |
+|-------|---------|----------------------|
+| **Trend** | EMA 50 vs 200, EMA Cloud 34/50, Price vs SMA 200, Price vs 1Y VWAP | price/fast MA above the slow MA |
+| **Momentum** | RSI (14), Stochastic (14,3), MACD (12/26/9) | oscillator in its bullish zone / MACD > signal |
+| **Money Flow** | Money Flow Index (14), Chaikin Money Flow (20) | volume-weighted buying pressure positive |
+
+Each signal votes +1 / 0 / −1; each group averages its votes; the final score is the mean
+of the three group scores. **Overbought/oversold extremes are tempered** — an RSI > 70 or
+MFI > 80 collapses to neutral rather than adding more bullishness, so an over-extended
+stock isn't rated a stronger buy. The rating card shows each group's sub-score and every
+signal's value; expand it with the **"signals"** toggle.
+
+Bands (on the −1…+1 score): `≥0.5` Strong Buy · `≥0.15` Buy · `−0.15…0.15` Neutral ·
+`≤−0.15` Sell · `≤−0.5` Strong Sell. This is a technical indicator, **not investment advice**.
 
 ## Tech Stack
 
