@@ -15,7 +15,7 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Ripster EMA Cloud 34/50** — trend-colored cloud between the 34 and 50 EMAs (see below)
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
 - **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
-- **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with a signal breakdown (see below)
+- **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with divergence flags and a signal breakdown (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`
 
 ## Fear & Greed Gauge
@@ -97,24 +97,45 @@ The cloud is rendered beneath the candles so price action stays readable on top.
 
 Each stock gets a per-symbol **Strong Sell → Strong Buy** rating (0–100) shown above the
 chart, computed entirely from its own price/volume in
-[`app/lib/sentiment.ts`](app/lib/sentiment.ts) — no analyst or news data (those sources
-aren't reliably reachable server-side). Signals are organized into **three
-equally-weighted groups** so trend alignment can't dominate the score:
+[`app/lib/sentiment.ts`](app/lib/sentiment.ts) (indicator math in
+[`app/lib/indicators.ts`](app/lib/indicators.ts); every tunable lives in
+[`app/lib/sentimentConfig.ts`](app/lib/sentimentConfig.ts)) — no analyst or news data
+(those sources aren't reliably reachable server-side). Signals are organized into **three
+weighted groups** (equal by default):
 
-| Group | Signals | Vote is bullish when |
-|-------|---------|----------------------|
-| **Trend** | EMA 50 vs 200, EMA Cloud 34/50, Price vs SMA 200, Price vs 1Y VWAP | price/fast MA above the slow MA |
-| **Momentum** | RSI (14), Stochastic (14,3), MACD (12/26/9) | oscillator in its bullish zone / MACD > signal |
-| **Money Flow** | Money Flow Index (14), Chaikin Money Flow (20) | volume-weighted buying pressure positive |
+| Group | Signals | Notes |
+|-------|---------|-------|
+| **Trend** | EMA 50 vs 200, Price vs SMA 200, Price vs 1Y VWAP **(collapsed into one component)** + EMA Cloud 34/50 | de-duplicated so collinear trend-followers can't triple-count |
+| **Momentum** | RSI (14), Stochastic (14,3), MACD (12/26/9) | oscillator thresholds adapt to the stock's own percentiles |
+| **Money Flow** | Money Flow Index (14), Chaikin Money Flow (20) | volume-weighted buying/selling pressure |
 
-Each signal votes +1 / 0 / −1; each group averages its votes; the final score is the mean
-of the three group scores. **Overbought/oversold extremes are tempered** — an RSI > 70 or
-MFI > 80 collapses to neutral rather than adding more bullishness, so an over-extended
-stock isn't rated a stronger buy. The rating card shows each group's sub-score and every
-signal's value; expand it with the **"signals"** toggle.
+Key mechanics:
+
+- **De-redundant trend:** the three collinear trend-followers average into a *single*
+  component so an uptrend can't max the bucket by itself.
+- **Extension dampener:** the trend score is scaled down (to a floor of 0.4) as price
+  stretches beyond ~3 ATR from its EMA 50 — a parabolic move reads with less conviction.
+  Bollinger %B and ATR-distance are shown in the breakdown.
+- **Adaptive, regime-aware oscillators:** overbought/oversold come from each indicator's
+  own trailing percentiles, and are read relative to the trend (oversold in an uptrend =
+  bullish dip; overbought in a downtrend = bearish; otherwise tempered).
+- **Divergence detection:** price/RSI, price/MFI, and trend-vs-internals divergences are
+  flagged as a **separate badge**, not folded into the number.
 
 Bands (on the −1…+1 score): `≥0.5` Strong Buy · `≥0.15` Buy · `−0.15…0.15` Neutral ·
-`≤−0.15` Sell · `≤−0.5` Strong Sell. This is a technical indicator, **not investment advice**.
+`≤−0.15` Sell · `≤−0.5` Strong Sell.
+
+### Validation (be honest about what this is)
+
+A walk-forward backtest (`npm run backtest`, no look-ahead) over the local ~2y history
+found the **score has ≈zero rank correlation with forward returns** and is **contrarian at
+short horizons** (in this mostly-bull sample, "Strong Sell" readings had the *highest*
+10-day forward returns — mean reversion). The **divergence flag** was weakly but correctly
+directional. So treat the rating as a **technical snapshot, not a return forecast** — the
+label mapping is *not* a validated buy/sell signal. This is a technical indicator, **not
+investment advice**.
+
+Unit tests cover the indicators and divergence logic: `npm test`.
 
 ## Tech Stack
 

@@ -1,8 +1,22 @@
 import { DailyBar } from './alphavantage';
 import { computeEMA, computeSMA, computeRollingVwap } from './vwap';
+import {
+  atrSeries,
+  bollingerPercentBSeries,
+  cmf,
+  detectDivergence,
+  emaSeries,
+  lastVal,
+  mfiSeries,
+  percentile,
+  rsiSeries,
+  Series,
+  stochasticSeries,
+} from './indicators';
+import { DeepPartial, Group, resolveConfig, SentimentConfig } from './sentimentConfig';
 
+export type { Group } from './sentimentConfig';
 export type Verdict = 'bullish' | 'neutral' | 'bearish';
-export type Group = 'Trend' | 'Momentum' | 'Money Flow';
 
 export interface SentimentSignal {
   name: string;
@@ -16,7 +30,14 @@ export interface GroupScore {
   score100: number; // 0..100
 }
 
+export interface Divergence {
+  kind: 'price-rsi' | 'price-mfi' | 'bucket';
+  direction: 'bullish' | 'bearish';
+  detail: string;
+}
+
 export interface Sentiment {
+  // ---- existing contract (unchanged meaning) ----
   score: number; // -1 (max bearish) .. +1 (max bullish)
   score100: number; // 0..100 for a gauge
   label: 'Strong Sell' | 'Sell' | 'Neutral' | 'Buy' | 'Strong Buy';
@@ -25,194 +46,246 @@ export interface Sentiment {
   bearish: number;
   groups: GroupScore[];
   signals: SentimentSignal[];
+  // ---- new, additive (all optional so old consumers keep working) ----
+  regime?: 'uptrend' | 'downtrend' | 'neutral';
+  extension?: { bbPercentB: number | null; atrDistance: number | null; dampener: number };
+  divergences?: Divergence[];
+  divergenceFlag?: string | null;
+  weights?: Record<Group, number>;
 }
 
-function labelFor(score: number): Sentiment['label'] {
-  if (score >= 0.5) return 'Strong Buy';
-  if (score >= 0.15) return 'Buy';
-  if (score > -0.15) return 'Neutral';
-  if (score > -0.5) return 'Sell';
-  return 'Strong Sell';
-}
-
+const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
 const verdictOf = (vote: number): Verdict => (vote > 0 ? 'bullish' : vote < 0 ? 'bearish' : 'neutral');
 const to100 = (score: number) => Math.round(((score + 1) / 2) * 100);
 
-// Oscillator vote (0..100 input): rewards healthy momentum, but tempers BOTH extremes
-// (overbought and oversold collapse to neutral rather than piling on).
-function oscVote(x: number, ob: number, os: number): number {
-  if (x > ob || x < os) return 0; // extreme → tempered
-  if (x >= 55) return 1;
-  if (x > 45) return 0;
-  return -1;
-}
-
-// Full-length (index-aligned) EMA over a value series, seeded with the first value.
-function emaArr(values: number[], window: number): number[] {
-  const k = 2 / (window + 1);
-  const out: number[] = [];
-  let ema = values[0];
-  for (let i = 0; i < values.length; i++) {
-    ema = i === 0 ? values[0] : values[i] * k + ema * (1 - k);
-    out.push(ema);
-  }
-  return out;
-}
-
-// Wilder's RSI over `period` bars; latest value.
-function rsi(closes: number[], period = 14): number | null {
-  if (closes.length < period + 1) return null;
-  let gain = 0;
-  let loss = 0;
-  for (let i = 1; i <= period; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff >= 0) gain += diff;
-    else loss -= diff;
-  }
-  let avgGain = gain / period;
-  let avgLoss = loss / period;
-  for (let i = period + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(diff, 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + Math.max(-diff, 0)) / period;
-  }
-  if (avgLoss === 0) return 100;
-  return 100 - 100 / (1 + avgGain / avgLoss);
-}
-
-// Stochastic %D = 3-period SMA of %K(period). Latest value.
-function stochastic(bars: DailyBar[], period = 14, smooth = 3): number | null {
-  if (bars.length < period + smooth) return null;
-  const kValues: number[] = [];
-  for (let i = period - 1; i < bars.length; i++) {
-    const win = bars.slice(i - period + 1, i + 1);
-    const hi = Math.max(...win.map((b) => b.high));
-    const lo = Math.min(...win.map((b) => b.low));
-    kValues.push(hi === lo ? 50 : (100 * (bars[i].close - lo)) / (hi - lo));
-  }
-  const lastK = kValues.slice(-smooth);
-  return lastK.reduce((s, v) => s + v, 0) / lastK.length;
-}
-
-// Money Flow Index over `period` bars; latest value.
-function mfi(bars: DailyBar[], period = 14): number | null {
-  if (bars.length < period + 1) return null;
-  const tp = bars.map((b) => (b.high + b.low + b.close) / 3);
-  let pos = 0;
-  let neg = 0;
-  for (let i = bars.length - period; i < bars.length; i++) {
-    const rawFlow = tp[i] * bars[i].volume;
-    if (tp[i] > tp[i - 1]) pos += rawFlow;
-    else if (tp[i] < tp[i - 1]) neg += rawFlow;
-  }
-  if (neg === 0) return 100;
-  return 100 - 100 / (1 + pos / neg);
-}
-
-// Chaikin Money Flow over `period` bars; latest value (-1..+1).
-function cmf(bars: DailyBar[], period = 20): number | null {
-  if (bars.length < period) return null;
-  let mfv = 0;
-  let vol = 0;
-  for (let i = bars.length - period; i < bars.length; i++) {
-    const b = bars[i];
-    const range = b.high - b.low || 1e-9;
-    mfv += (((b.close - b.low) - (b.high - b.close)) / range) * b.volume;
-    vol += b.volume;
-  }
-  return vol === 0 ? 0 : mfv / vol;
+function labelFor(score: number, cfg: SentimentConfig): Sentiment['label'] {
+  const { strongBuy, buy, sell, strongSell } = cfg.labels;
+  if (score >= strongBuy) return 'Strong Buy';
+  if (score >= buy) return 'Buy';
+  if (score > sell) return 'Neutral';
+  if (score > strongSell) return 'Sell';
+  return 'Strong Sell';
 }
 
 /**
- * Technical sentiment rating for a single stock, derived from its own price/volume.
- * Signals are organized into three equally-weighted groups so trend can't dominate:
- *   Trend (moving-average alignment) · Momentum (oscillators) · Money Flow (volume).
- * A group is skipped only if none of its signals have enough data.
+ * Oscillator vote that (a) adapts its overbought/oversold levels to the instrument's
+ * own recent percentile distribution and (b) reads extremes conditional on the trend
+ * regime — oversold in an uptrend is a bullish dip, oversold in a downtrend is just
+ * tempered (not a buy). Returns +1 / 0 / −1.
  */
-export function computeSentiment(bars: DailyBar[]): Sentiment | null {
-  if (bars.length < 35) return null;
+function adaptiveOscVote(
+  value: number,
+  series: Series,
+  regime: number,
+  cfg: SentimentConfig,
+  fixedOb: number,
+  fixedOs: number,
+): { vote: number; ob: number; os: number } {
+  let ob = fixedOb;
+  let os = fixedOs;
+  if (cfg.adaptive.enabled) {
+    const recent = series.slice(-cfg.adaptive.lookback).filter((v): v is number => v !== null);
+    if (recent.length >= cfg.adaptive.minSamples) {
+      ob = percentile(recent, cfg.adaptive.upperPct);
+      os = percentile(recent, cfg.adaptive.lowerPct);
+    }
+  }
+  let vote: number;
+  if (value >= ob) vote = regime < 0 ? -1 : 0; // overbought: bearish only in a downtrend, else tempered
+  else if (value <= os) vote = regime > 0 ? 1 : 0; // oversold: bullish dip only in an uptrend, else tempered
+  else if (value >= cfg.adaptive.midUpper) vote = 1;
+  else if (value <= cfg.adaptive.midLower) vote = -1;
+  else vote = 0;
+  return { vote, ob, os };
+}
+
+/** Trend dampener in [minDampen, 1]: shrinks toward the floor as price stretches
+ *  (in ATR units) beyond `atrStretchStart`, so a parabolic move reads with less conviction. */
+function extensionDampener(atrDistance: number | null, cfg: SentimentConfig): number {
+  if (atrDistance === null) return 1;
+  const s = Math.abs(atrDistance);
+  const { atrStretchStart, atrStretchFull, minDampen } = cfg.extension;
+  if (s <= atrStretchStart) return 1;
+  const t = Math.min(1, (s - atrStretchStart) / (atrStretchFull - atrStretchStart));
+  return Math.max(minDampen, 1 - t * (1 - minDampen));
+}
+
+/**
+ * Technical sentiment rating for a single stock, from its own price/volume.
+ *
+ * Design (see sentimentConfig.ts for all tunables):
+ *  - Trend bucket de-duplicates collinear signals: the three trend-following signals
+ *    (EMA50v200, Price vs SMA200, Price vs VWAP) are averaged into ONE component so
+ *    they can't triple-count, with the faster EMA-cloud as a second component. The
+ *    bucket magnitude is then dampened by how extended price is (ATR units from EMA50).
+ *  - Momentum & Money-Flow oscillators use adaptive (percentile) thresholds and are
+ *    read conditional on the trend regime.
+ *  - Buckets are combined with configurable weights.
+ *  - Divergence (bucket-level and price/oscillator) is detected and surfaced as a
+ *    distinct flag rather than folded into the number.
+ */
+export function computeSentiment(bars: DailyBar[], override?: DeepPartial<SentimentConfig>): Sentiment | null {
+  const cfg = resolveConfig(override);
+  if (bars.length < cfg.minBars) return null;
+
   const closes = bars.map((b) => b.close);
   const price = closes[closes.length - 1];
-  const last = <T>(a: T[]): T | undefined => a[a.length - 1];
   const signals: SentimentSignal[] = [];
-  const push = (name: string, group: Group, vote: number, detail: string) =>
+  const pushSignal = (name: string, group: Group, vote: number, detail: string) =>
     signals.push({ name, group, verdict: verdictOf(vote), detail });
 
-  // ---- Trend group (moving-average alignment) ----
-  const ema34 = last(computeEMA(bars, 34))?.value;
-  const ema50 = last(computeEMA(bars, 50))?.value;
-  const ema200 = last(computeEMA(bars, 200))?.value;
-  const sma200 = last(computeSMA(bars, 200))?.value;
-  const vwap = last(computeRollingVwap(bars, 252))?.value;
-  const trendVotes: number[] = [];
-  const addTrend = (name: string, vote: number, detail: string) => {
-    trendVotes.push(vote);
-    push(name, 'Trend', vote, detail);
-  };
-  if (ema50 !== undefined && ema200 !== undefined)
-    addTrend('Trend (EMA 50 vs 200)', Math.sign(ema50 - ema200), `EMA50 ${ema50.toFixed(2)} vs EMA200 ${ema200.toFixed(2)}`);
-  if (ema34 !== undefined && ema50 !== undefined)
-    addTrend('EMA Cloud 34/50', Math.sign(ema34 - ema50), `EMA34 ${ema34.toFixed(2)} vs EMA50 ${ema50.toFixed(2)}`);
-  if (sma200 !== undefined)
-    addTrend('Price vs SMA 200', Math.sign(price - sma200), `Price ${price.toFixed(2)} vs SMA200 ${sma200.toFixed(2)}`);
-  if (vwap !== undefined)
-    addTrend('Price vs 1Y VWAP', Math.sign(price - vwap), `Price ${price.toFixed(2)} vs VWAP ${vwap.toFixed(2)}`);
+  // ============ Trend bucket (de-redundant) ============
+  const ema34 = lastVal(toSeries(computeEMA(bars, cfg.trend.emaFast)));
+  const ema50 = lastVal(toSeries(computeEMA(bars, cfg.trend.emaMid)));
+  const ema200 = lastVal(toSeries(computeEMA(bars, cfg.trend.emaSlow)));
+  const sma200 = lastVal(toSeries(computeSMA(bars, cfg.trend.smaSlow)));
+  const vwap = lastVal(toSeries(computeRollingVwap(bars, cfg.trend.vwapWindow)));
 
-  // ---- Momentum group (oscillators) ----
-  const momentumVotes: number[] = [];
-  const addMom = (name: string, vote: number, detail: string) => {
-    momentumVotes.push(vote);
-    push(name, 'Momentum', vote, detail);
-  };
-  const r = rsi(closes, 14);
-  if (r !== null) addMom('RSI (14)', oscVote(r, 70, 30), `RSI ${r.toFixed(1)}`);
-  const st = stochastic(bars, 14, 3);
-  if (st !== null) addMom('Stochastic (14,3)', oscVote(st, 80, 20), `%D ${st.toFixed(1)}`);
-  {
-    const ema12 = emaArr(closes, 12);
-    const ema26 = emaArr(closes, 26);
-    const macdLine = ema12.map((v, i) => v - ema26[i]);
-    const signalLine = emaArr(macdLine, 9);
-    const macd = macdLine[macdLine.length - 1];
-    const sig = signalLine[signalLine.length - 1];
-    addMom('MACD (12/26/9)', Math.sign(macd - sig), `MACD ${macd.toFixed(2)} vs signal ${sig.toFixed(2)}`);
+  // Three collinear trend-followers → collapsed into ONE averaged component.
+  const longVotes: number[] = [];
+  if (ema50 !== null && ema200 !== null) {
+    const v = Math.sign(ema50 - ema200);
+    longVotes.push(v);
+    pushSignal('Trend (EMA 50 vs 200)', 'Trend', v, `EMA50 ${ema50.toFixed(2)} vs EMA200 ${ema200.toFixed(2)}`);
+  }
+  if (sma200 !== null) {
+    const v = Math.sign(price - sma200);
+    longVotes.push(v);
+    pushSignal('Price vs SMA 200', 'Trend', v, `Price ${price.toFixed(2)} vs SMA200 ${sma200.toFixed(2)}`);
+  }
+  if (vwap !== null) {
+    const v = Math.sign(price - vwap);
+    longVotes.push(v);
+    pushSignal('Price vs 1Y VWAP', 'Trend', v, `Price ${price.toFixed(2)} vs VWAP ${vwap.toFixed(2)}`);
+  }
+  const longTrend = longVotes.length ? mean(longVotes) : null; // collapsed collinear block
+
+  let shortTrend: number | null = null;
+  if (ema34 !== null && ema50 !== null) {
+    shortTrend = Math.sign(ema34 - ema50);
+    pushSignal('EMA Cloud 34/50', 'Trend', shortTrend, `EMA34 ${ema34.toFixed(2)} vs EMA50 ${ema50.toFixed(2)}`);
   }
 
-  // ---- Money-flow group (volume) ----
+  const trendComponents = [longTrend, shortTrend].filter((v): v is number => v !== null);
+  const regimeScore = longTrend ?? (shortTrend ?? 0);
+  const regime = regimeScore > 0.1 ? 1 : regimeScore < -0.1 ? -1 : 0;
+
+  // Extension context → dampener on trend conviction.
+  const bbPercentB = lastVal(bollingerPercentBSeries(closes, cfg.extension.bbPeriod, cfg.extension.bbStd));
+  const atr = lastVal(atrSeries(bars, cfg.extension.atrPeriod));
+  const atrDistance = atr !== null && atr > 0 && ema50 !== null ? (price - ema50) / atr : null;
+  const dampener = extensionDampener(atrDistance, cfg);
+
+  let trendScore: number | null = trendComponents.length ? mean(trendComponents) : null;
+  if (trendScore !== null) trendScore *= dampener;
+
+  // ============ Momentum bucket (adaptive + regime-aware) ============
+  const rsiS = rsiSeries(closes, cfg.momentum.rsiPeriod);
+  const stochS = stochasticSeries(bars, cfg.momentum.stochPeriod, cfg.momentum.stochSmooth);
+  const momentumVotes: number[] = [];
+  const rsiVal = lastVal(rsiS);
+  if (rsiVal !== null) {
+    const { vote } = adaptiveOscVote(rsiVal, rsiS, regime, cfg, cfg.momentum.rsiOb, cfg.momentum.rsiOs);
+    momentumVotes.push(vote);
+    pushSignal('RSI (14)', 'Momentum', vote, `RSI ${rsiVal.toFixed(1)}`);
+  }
+  const stochVal = lastVal(stochS);
+  if (stochVal !== null) {
+    const { vote } = adaptiveOscVote(stochVal, stochS, regime, cfg, cfg.momentum.stochOb, cfg.momentum.stochOs);
+    momentumVotes.push(vote);
+    pushSignal('Stochastic (14,3)', 'Momentum', vote, `%D ${stochVal.toFixed(1)}`);
+  }
+  {
+    const ema12 = emaSeries(closes, cfg.momentum.macdFast);
+    const ema26 = emaSeries(closes, cfg.momentum.macdSlow);
+    const macdLine = ema12.map((v, i) => v - ema26[i]);
+    const signalLine = emaSeries(macdLine, cfg.momentum.macdSignal);
+    const macd = macdLine[macdLine.length - 1];
+    const sig = signalLine[signalLine.length - 1];
+    const v = Math.sign(macd - sig);
+    momentumVotes.push(v);
+    pushSignal('MACD (12/26/9)', 'Momentum', v, `MACD ${macd.toFixed(2)} vs signal ${sig.toFixed(2)}`);
+  }
+  const momentumScore = momentumVotes.length ? mean(momentumVotes) : null;
+
+  // ============ Money-Flow bucket (adaptive + regime-aware) ============
+  const mfiS = mfiSeries(bars, cfg.moneyFlow.mfiPeriod);
   const flowVotes: number[] = [];
-  const addFlow = (name: string, vote: number, detail: string) => {
+  const mfiVal = lastVal(mfiS);
+  if (mfiVal !== null) {
+    const { vote } = adaptiveOscVote(mfiVal, mfiS, regime, cfg, cfg.moneyFlow.mfiOb, cfg.moneyFlow.mfiOs);
     flowVotes.push(vote);
-    push(name, 'Money Flow', vote, detail);
-  };
-  const m = mfi(bars, 14);
-  if (m !== null) addFlow('Money Flow Index (14)', oscVote(m, 80, 20), `MFI ${m.toFixed(1)}`);
-  const cf = cmf(bars, 20);
-  if (cf !== null) addFlow('Chaikin Money Flow (20)', cf > 0.05 ? 1 : cf < -0.05 ? -1 : 0, `CMF ${cf.toFixed(3)}`);
+    pushSignal('Money Flow Index (14)', 'Money Flow', vote, `MFI ${mfiVal.toFixed(1)}`);
+  }
+  const cf = cmf(bars, cfg.moneyFlow.cmfPeriod);
+  if (cf !== null) {
+    const v = cf > cfg.moneyFlow.cmfDeadzone ? 1 : cf < -cfg.moneyFlow.cmfDeadzone ? -1 : 0;
+    flowVotes.push(v);
+    pushSignal('Chaikin Money Flow (20)', 'Money Flow', v, `CMF ${cf.toFixed(3)}`);
+  }
+  const flowScore = flowVotes.length ? mean(flowVotes) : null;
 
-  const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
-  const groups: GroupScore[] = [];
-  const groupScores: number[] = [];
-  const record = (name: Group, votes: number[]) => {
-    if (!votes.length) return;
-    const s = mean(votes);
-    groupScores.push(s);
-    groups.push({ name, score100: to100(s) });
-  };
-  record('Trend', trendVotes);
-  record('Momentum', momentumVotes);
-  record('Money Flow', flowVotes);
+  // ============ Weighted blend across buckets ============
+  const bucketScores: { name: Group; score: number }[] = [];
+  if (trendScore !== null) bucketScores.push({ name: 'Trend', score: trendScore });
+  if (momentumScore !== null) bucketScores.push({ name: 'Momentum', score: momentumScore });
+  if (flowScore !== null) bucketScores.push({ name: 'Money Flow', score: flowScore });
+  if (!bucketScores.length) return null;
 
-  if (!groupScores.length) return null;
-  const score = mean(groupScores); // equal weight across groups
+  let wSum = 0;
+  let acc = 0;
+  for (const b of bucketScores) {
+    const w = cfg.weights[b.name] ?? 0;
+    wSum += w;
+    acc += w * b.score;
+  }
+  const score = wSum > 0 ? acc / wSum : mean(bucketScores.map((b) => b.score));
+  const groups: GroupScore[] = bucketScores.map((b) => ({ name: b.name, score100: to100(b.score) }));
+
+  // ============ Divergence (surfaced separately, not folded into the score) ============
+  const divergences: Divergence[] = [];
+  const dRsi = detectDivergence(closes, rsiS, 'RSI', cfg.divergence.lookback, cfg.divergence.pivotWindow);
+  if (dRsi) divergences.push({ kind: 'price-rsi', ...dRsi });
+  const dMfi = detectDivergence(closes, mfiS, 'MFI', cfg.divergence.lookback, cfg.divergence.pivotWindow);
+  if (dMfi) divergences.push({ kind: 'price-mfi', ...dMfi });
+
+  // Bucket divergence: trend running ahead of (or behind) the internals.
+  const internalScores = [momentumScore, flowScore].filter((v): v is number => v !== null);
+  if (trendScore !== null && internalScores.length) {
+    const internals = mean(internalScores);
+    const gap = trendScore - internals;
+    if (gap >= cfg.divergence.minBucketGap)
+      divergences.push({ kind: 'bucket', direction: 'bearish', detail: 'Strong trend, weak momentum/flow' });
+    else if (-gap >= cfg.divergence.minBucketGap)
+      divergences.push({ kind: 'bucket', direction: 'bullish', detail: 'Improving momentum/flow vs weak trend' });
+  }
+
+  // Headline flag: prioritise a price/oscillator divergence, then bucket divergence.
+  const priceOsc = divergences.find((d) => d.kind !== 'bucket');
+  const bucketDiv = divergences.find((d) => d.kind === 'bucket');
+  const headline = priceOsc ?? bucketDiv ?? null;
+  const divergenceFlag = headline
+    ? `${headline.direction === 'bullish' ? 'Bullish' : 'Bearish'} divergence`
+    : null;
 
   return {
     score,
     score100: to100(score),
-    label: labelFor(score),
+    label: labelFor(score, cfg),
     bullish: signals.filter((s) => s.verdict === 'bullish').length,
     neutral: signals.filter((s) => s.verdict === 'neutral').length,
     bearish: signals.filter((s) => s.verdict === 'bearish').length,
     groups,
     signals,
+    regime: regime > 0 ? 'uptrend' : regime < 0 ? 'downtrend' : 'neutral',
+    extension: { bbPercentB, atrDistance, dampener },
+    divergences,
+    divergenceFlag,
+    weights: cfg.weights,
   };
+}
+
+// computeEMA/SMA/VWAP return {date,value}[]; adapt to the Series shape lastVal expects.
+function toSeries(points: { value: number }[]): Series {
+  return points.map((p) => p.value);
 }

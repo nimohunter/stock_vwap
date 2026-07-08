@@ -43,8 +43,20 @@ export default function SentimentRating({ symbol, bars }: Props) {
         {/* Label + gauge */}
         <div className="flex-1 min-w-[160px]">
           <div className="flex items-baseline justify-between gap-2">
-            <span className={`text-sm font-semibold ${c.text}`}>
+            <span className={`text-sm font-semibold ${c.text} flex items-center gap-2`}>
               {symbol} · {sentiment.label}
+              {sentiment.divergenceFlag && (
+                <span
+                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                    sentiment.divergenceFlag.startsWith('Bullish')
+                      ? 'bg-teal-500/15 text-teal-300'
+                      : 'bg-amber-500/15 text-amber-300'
+                  }`}
+                  title="Trend and internals disagree — see breakdown"
+                >
+                  ⚠ {sentiment.divergenceFlag}
+                </span>
+              )}
             </span>
             <span className="text-[11px] text-slate-500">Technical Sentiment</span>
           </div>
@@ -77,9 +89,42 @@ export default function SentimentRating({ symbol, bars }: Props) {
         </div>
       </div>
 
-      {/* Signal breakdown, organized by equally-weighted group */}
+      {/* Signal breakdown, organized by weighted group */}
       {open && (
         <div className="border-t border-slate-700 px-4 py-3 space-y-3 text-xs">
+          {/* Divergence + extension context */}
+          {(sentiment.divergences?.length || sentiment.extension) && (
+            <div className="space-y-1.5 pb-1">
+              {sentiment.divergences?.map((d, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${d.direction === 'bullish' ? 'bg-teal-400' : 'bg-amber-400'}`}
+                  />
+                  <span className="w-40 shrink-0 text-slate-300">
+                    {d.kind === 'bucket' ? 'Bucket divergence' : d.kind === 'price-rsi' ? 'Price/RSI' : 'Price/MFI'}
+                  </span>
+                  <span className="flex-1 text-slate-500">{d.detail}</span>
+                  <span className={d.direction === 'bullish' ? 'text-teal-300' : 'text-amber-300'}>{d.direction}</span>
+                </div>
+              ))}
+              {sentiment.extension && (
+                <div className="flex items-center gap-2 text-slate-500">
+                  <span className="w-2 h-2 rounded-full shrink-0 bg-slate-600" />
+                  <span className="w-40 shrink-0 text-slate-400">Extension</span>
+                  <span className="flex-1">
+                    {sentiment.regime && <>regime {sentiment.regime} · </>}
+                    {sentiment.extension.atrDistance !== null && (
+                      <>{sentiment.extension.atrDistance.toFixed(1)} ATR from EMA50 · </>
+                    )}
+                    {sentiment.extension.bbPercentB !== null && <>%B {sentiment.extension.bbPercentB.toFixed(2)}</>}
+                  </span>
+                  {sentiment.extension.dampener < 1 && (
+                    <span className="text-amber-300">trend ×{sentiment.extension.dampener.toFixed(2)}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {sentiment.groups.map((g) => (
             <div key={g.name} className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -109,9 +154,15 @@ export default function SentimentRating({ symbol, bars }: Props) {
             </div>
           ))}
           <p className="text-[11px] text-slate-500 pt-1">
-            Equal-weighted blend of three groups — Trend (moving averages/VWAP), Momentum (RSI, Stochastic, MACD) and
-            Money Flow (MFI, CMF). Derived from this stock&apos;s own price/volume, not analyst or news sentiment.
-            Overbought/oversold extremes are tempered. Not investment advice.
+            Weighted blend of three groups — Trend (collinear MA/VWAP signals collapsed to avoid double-counting, then
+            dampened when price is stretched), Momentum and Money Flow (oscillators use the stock&apos;s own recent
+            percentile thresholds, read relative to trend). Divergences are flagged separately, not folded into the
+            score. Derived from price/volume only — not analyst or news sentiment.
+          </p>
+          <p className="text-[11px] text-amber-500/80">
+            Caveat: on ~2y of history this score showed ≈zero rank correlation with forward returns and was contrarian
+            at short horizons (extreme readings often mean-revert). Treat it as a technical snapshot, not a return
+            forecast. Not investment advice.
           </p>
         </div>
       )}
