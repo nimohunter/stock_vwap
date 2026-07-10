@@ -66,19 +66,6 @@ export function computeAnchoredVwapBands(bars: DailyBar[], anchorDate: string): 
   return result;
 }
 
-export function computeSMA(bars: DailyBar[], window: number): VwapPoint[] {
-  const result: VwapPoint[] = [];
-  if (bars.length < window) return result;
-  let sum = 0;
-  for (let i = 0; i < window; i++) sum += bars[i].close;
-  result.push({ date: bars[window - 1].date, value: sum / window });
-  for (let i = window; i < bars.length; i++) {
-    sum += bars[i].close - bars[i - window].close;
-    result.push({ date: bars[i].date, value: sum / window });
-  }
-  return result;
-}
-
 export function computeEMA(bars: DailyBar[], window: number): VwapPoint[] {
   const result: VwapPoint[] = [];
   if (bars.length < window) return result;

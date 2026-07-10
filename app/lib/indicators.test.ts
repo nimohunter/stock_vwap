@@ -14,7 +14,6 @@ import {
   percentile,
   rsiSeries,
   stochasticKD,
-  stochasticSeries,
 } from './indicators';
 
 // Build synthetic OHLCV bars from a close series; caller can override H/L/volume.
@@ -144,13 +143,6 @@ describe('detectDivergence', () => {
     osc[2] = 60;
     osc[7] = 70; // higher high, confirms price → no divergence
     expect(detectDivergence(price, osc, 'RSI', 60, 2)).toBeNull();
-  });
-});
-
-describe('stochasticSeries', () => {
-  it('is ~100 when the close prints at the top of the range', () => {
-    const b = bars(Array.from({ length: 30 }, () => 10), { spread: 2 }).map((x) => ({ ...x, close: x.high }));
-    expect(lastVal(stochasticSeries(b, 14, 3))!).toBeCloseTo(100, 4);
   });
 });
 

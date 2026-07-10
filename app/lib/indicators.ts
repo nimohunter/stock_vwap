@@ -48,34 +48,6 @@ export function rsiSeries(closes: number[], period = 14): Series {
   return out;
 }
 
-/** Stochastic %D = `smooth`-period SMA of %K(`period`). */
-export function stochasticSeries(bars: DailyBar[], period = 14, smooth = 3): Series {
-  const k: Series = new Array(bars.length).fill(null);
-  for (let i = period - 1; i < bars.length; i++) {
-    let hi = -Infinity;
-    let lo = Infinity;
-    for (let j = i - period + 1; j <= i; j++) {
-      if (bars[j].high > hi) hi = bars[j].high;
-      if (bars[j].low < lo) lo = bars[j].low;
-    }
-    k[i] = hi === lo ? 50 : (100 * (bars[i].close - lo)) / (hi - lo);
-  }
-  const out: Series = new Array(bars.length).fill(null);
-  for (let i = period - 1 + (smooth - 1); i < bars.length; i++) {
-    let s = 0;
-    let n = 0;
-    for (let j = i - smooth + 1; j <= i; j++) {
-      const v = k[j];
-      if (v !== null) {
-        s += v;
-        n++;
-      }
-    }
-    out[i] = n ? s / n : null;
-  }
-  return out;
-}
-
 /**
  * Slow stochastic: %K = `smoothK`-period SMA of raw fast %K(`period`); %D =
  * `smoothD`-period SMA of %K. Both full-length (null during warm-up). This is
