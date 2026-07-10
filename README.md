@@ -156,8 +156,8 @@ Everything is computed on the **strength ratio** `stock ÷ VOO × 100`:
 - **r-RSI (14)** — is the *outperformance itself* overbought/oversold?
 - **r-ADX (14/14, Wilder)** — how strong is the relative trend? Episode starts are
   suppressed while r-ADX < 20; ≥ 25 reads as a "strong relative trend".
-- **3M relative performance** — plain ratio change over 63 bars (outperforming /
-  underperforming readout on the badge).
+- **Relative performance (1D / 7D / 3M)** — plain ratio change over 1, 7, and 63 bars
+  (outperforming / underperforming vs the market, per window, on the badge).
 - **OB/OS episode machine** — stateful start/end events (not per-bar flicker): an episode
   starts when r-RSI breaks its own adaptive threshold *and* makes a fresh 30-bar extreme
   (or crosses a hard threshold), and ends when it decays or r-ADX rolls over. Extremes

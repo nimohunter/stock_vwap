@@ -50,7 +50,7 @@ export interface RsConfig {
     clamps: { obEnter: [number, number]; obHard: [number, number]; osEnter: [number, number]; osHard: [number, number] };
   };
   fixed: { obEnter: number; obHard: number; osEnter: number; osHard: number };
-  perfWindow: number; // bars for the relative-performance readout (63 ≈ 3M)
+  perfWindows: { label: string; bars: number }[]; // relative-performance readouts (trading days)
 }
 
 export const RS_DEFAULTS: RsConfig = {
@@ -76,7 +76,11 @@ export const RS_DEFAULTS: RsConfig = {
     clamps: { obEnter: [55, 68], obHard: [65, 80], osEnter: [32, 45], osHard: [20, 35] },
   },
   fixed: { obEnter: 60, obHard: 70, osEnter: 40, osHard: 30 },
-  perfWindow: 63,
+  perfWindows: [
+    { label: '1D', bars: 1 },
+    { label: '7D', bars: 7 },
+    { label: '3M', bars: 63 },
+  ],
 };
 
 const clamp = (v: number, [lo, hi]: [number, number]) => Math.min(hi, Math.max(lo, v));
@@ -315,8 +319,8 @@ export interface RsResult {
   trendStrength: 'strong' | 'weak';
   state: 'overbought' | 'oversold' | 'neutral';
   extreme: boolean;
-  /** Relative performance vs the benchmark over `perfWindow` bars (≈3M). */
-  relPerf: number | null;
+  /** Relative performance vs the benchmark over each configured window (1D / 7D / 3M). */
+  relPerf: { label: string; bars: number; value: number | null }[];
   thresholds: { obEnter: number; obHard: number; osEnter: number; osHard: number; adaptive: boolean };
   events: RsEvent[];
 }
@@ -334,8 +338,11 @@ export function computeRelativeStrength(
   const adx = s.adx[last];
   if (rsi === null || adx === null) return null;
 
-  const past = last - cfg.perfWindow;
-  const relPerf = past >= 0 ? s.ratioCloses[last] / s.ratioCloses[past] - 1 : null;
+  // Relative performance = change in the stock/benchmark ratio over each window.
+  const relPerf = cfg.perfWindows.map(({ label, bars }) => {
+    const past = last - bars;
+    return { label, bars, value: past >= 0 ? s.ratioCloses[last] / s.ratioCloses[past] - 1 : null };
+  });
 
   return {
     benchmark: cfg.benchmark,

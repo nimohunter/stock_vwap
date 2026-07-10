@@ -177,7 +177,9 @@ describe('computeRsSeries / computeRelativeStrength', () => {
     expect(rs).not.toBeNull();
     expect(rs!.state).toBe('overbought');
     expect(rs!.trendStrength).toBe('strong');
-    expect(rs!.relPerf).toBeGreaterThan(0);
+    // Every configured window (1D/7D/3M) should show outperformance vs the flat benchmark.
+    expect(rs!.relPerf.map((p) => p.label)).toEqual(['1D', '7D', '3M']);
+    expect(rs!.relPerf.every((p) => (p.value ?? 0) > 0)).toBe(true);
     expect(rs!.rsi).toBeGreaterThan(70);
     expect(rs!.events.some((e) => e.type === 'obStart')).toBe(true);
   });
@@ -190,6 +192,6 @@ describe('computeRsSeries / computeRelativeStrength', () => {
     const rs = computeRelativeStrength(stock, bench, fixedConfig);
     expect(rs).not.toBeNull();
     expect(rs!.state).toBe('oversold');
-    expect(rs!.relPerf).toBeLessThan(0);
+    expect(rs!.relPerf.every((p) => (p.value ?? 0) < 0)).toBe(true);
   });
 });
