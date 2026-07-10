@@ -14,6 +14,7 @@ import {
   HistogramSeries,
   LineStyle,
   Time,
+  IPriceLine,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/alphavantage';
 import { VwapBands, computeSMA, computeEMA } from '@/app/lib/vwap';
@@ -27,6 +28,7 @@ interface Props {
   anchoredBands?: VwapBands[];
   earningsDates?: string[];
   rsEvents?: RsEvent[];
+  optionsLevels?: { callWall: number | null; putWall: number | null; gammaFlip: number | null } | null;
   onAnchorSelect?: (date: string) => void;
   showSma50?: boolean;
   showSma200?: boolean;
@@ -58,6 +60,7 @@ export default function VwapChart({
   anchoredBands = [],
   earningsDates = [],
   rsEvents = [],
+  optionsLevels = null,
   onAnchorSelect,
   showSma50 = false,
   showSma200 = false,
@@ -86,6 +89,7 @@ export default function VwapChart({
   const avwap1lRef = useRef<LineSer | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const rsZonesRef = useRef<RsEpisodePrimitive | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
   const onAnchorSelectRef = useRef(onAnchorSelect);
   useEffect(() => {
     onAnchorSelectRef.current = onAnchorSelect;
@@ -277,6 +281,32 @@ export default function VwapChart({
         : []
     );
   }, [earningsDates, rsEvents, bars]);
+
+  useEffect(() => {
+    const candle = candleRef.current;
+    if (!candle) return;
+    for (const line of priceLinesRef.current) candle.removePriceLine(line);
+    priceLinesRef.current = [];
+    if (!optionsLevels) return;
+    const specs = [
+      { price: optionsLevels.callWall, color: '#ef4444', title: 'Call wall' },
+      { price: optionsLevels.putWall, color: '#22c55e', title: 'Put wall' },
+      { price: optionsLevels.gammaFlip, color: '#38bdf8', title: 'γ flip' },
+    ];
+    for (const s of specs) {
+      if (s.price === null) continue;
+      priceLinesRef.current.push(
+        candle.createPriceLine({
+          price: s.price,
+          color: s.color,
+          lineWidth: 1,
+          lineStyle: LineStyle.LargeDashed,
+          axisLabelVisible: true,
+          title: s.title,
+        })
+      );
+    }
+  }, [optionsLevels]);
 
   return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />;
 }

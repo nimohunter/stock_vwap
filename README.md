@@ -20,6 +20,7 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
 - **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with divergence flags and a signal breakdown (see below)
 - **Relative Strength vs VOO** — RSI/ADX computed on the stock÷VOO price ratio, with overbought/oversold episode markers on the chart (see below)
+- **Options Levels (MU)** — call wall / put wall / gamma flip drawn on the chart plus a GEX/P-C/IV panel, from a once-a-day FlashAlpha snapshot (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`; a GitHub Action refreshes data every weeknight. The header shows a "Data as of" date that turns amber when data is >4 days old.
 
 The ticker list lives in one place — [`app/lib/tickers.json`](app/lib/tickers.json) — read by the UI, the API layer, and both data scripts.
@@ -192,6 +193,28 @@ the sentiment score (≈ 0) and than a plain 63-day relative-momentum baseline (
 **Episode events were near base rate** (n < 100 each; extremes n ≈ 15, unusable). Treat
 the badge as context, the markers as annotations — not trade signals. Not investment advice.
 
+## Options Levels (MU)
+
+For tickers with a cached options snapshot (currently **MU** only), the page shows an
+**Options Levels** panel — call wall, put wall, gamma flip, net GEX, put/call ratios,
+ATM IV vs HV20 — and draws the three price levels on the chart as dashed horizontal
+lines (red = call wall ≈ resistance, green = put wall ≈ support, blue = gamma flip,
+below which dealer hedging amplifies moves instead of dampening them).
+
+**Data & quota:** the source is the FlashAlpha API, whose free key allows **5 queries
+per day** (and only entitled symbols). To stay safely inside that,
+`scripts/fetch-options-data.mjs`:
+
+- runs in `predev`/`prebuild` and the nightly GitHub Action,
+- fetches **one** endpoint per ticker (`/v1/stock/<sym>/summary`),
+- **skips entirely while the cached `app/data/<SYM>.options.json` is younger than 20h**,
+- is a silent no-op when `FLASHALPHA_API_KEY` is unset.
+
+Net usage: ~1 query/day. The page itself never calls the upstream API —
+`app/api/options-levels` only reads the local cache. To add another entitled ticker,
+append it to `OPTIONS_TICKERS` in the script. The key lives in `.env.local` locally and
+in the `FLASHALPHA_API_KEY` GitHub Actions secret.
+
 ## Tech Stack
 
 - Next.js 16 (App Router) + TypeScript
@@ -241,7 +264,8 @@ Open [http://localhost:3001](http://localhost:3001).
 
 ```bash
 # .env.local
-ALPHA_VANTAGE_API_KEY=your_key_here   # fallback data source, free at alphavantage.co
+ALPHA_VANTAGE_API_KEY=your_key_here   # fallback data source + earnings markers, free at alphavantage.co
+FLASHALPHA_API_KEY=your_key_here      # options levels (5 queries/day free tier, MU only)
 ```
 
 ## Deployment

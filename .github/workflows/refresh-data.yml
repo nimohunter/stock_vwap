@@ -24,6 +24,11 @@ jobs:
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
         run: node scripts/fetch-data.mjs
 
+      - name: Fetch options levels (FlashAlpha, 1 of 5 daily queries)
+        env:
+          FLASHALPHA_API_KEY: ${{ secrets.FLASHALPHA_API_KEY }}
+        run: node scripts/fetch-options-data.mjs
+
       - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"

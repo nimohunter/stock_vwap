@@ -6,9 +6,11 @@ import StatsPanel from './components/StatsPanel';
 import FearGreedGauge from './components/FearGreedGauge';
 import SentimentRating from './components/SentimentRating';
 import RelativeStrengthBadge from './components/RelativeStrengthBadge';
+import OptionsLevelsPanel from './components/OptionsLevelsPanel';
 import { DailyBar } from './lib/alphavantage';
 import { VwapBands } from './lib/vwap';
 import { RsResult } from './lib/relativeStrength';
+import { OptionsSummary } from './lib/optionsData';
 import tickers from './lib/tickers.json';
 
 const VwapChart = dynamic(() => import('./components/VwapChart'), { ssr: false });
@@ -43,6 +45,7 @@ export default function Home() {
   const [anchoredData, setAnchoredData] = useState<{ key: string; bands: VwapBands[] }>({ key: '', bands: [] });
   const [earningsData, setEarningsData] = useState<{ sym: string; dates: string[] }>({ sym: '', dates: [] });
   const [rsData, setRsData] = useState<{ sym: string; rs: RsResult | null }>({ sym: '', rs: null });
+  const [optionsData, setOptionsData] = useState<{ sym: string; options: OptionsSummary | null }>({ sym: '', options: null });
   const [hydrated, setHydrated] = useState(false);
 
   // Restore view state once on mount: URL params win, then localStorage, then defaults.
@@ -155,9 +158,25 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [hydrated, symbol]);
 
+  // Options levels (call/put wall, GEX…) — served from a local daily cache; only
+  // symbols with a <TICKER>.options.json data file return anything (currently MU).
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    fetch(`/api/options-levels?symbol=${symbol}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || data.error) return;
+        setOptionsData({ sym: symbol, options: data.options ?? null });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [hydrated, symbol]);
+
   const anchoredBands = anchor && anchoredData.key === `${symbol}|${anchor}` ? anchoredData.bands : [];
   const earningsDates = earningsData.sym === symbol ? earningsData.dates : [];
   const rs = rsData.sym === symbol ? rsData.rs : null;
+  const options = optionsData.sym === symbol ? optionsData.options : null;
 
   const selectSymbol = (t: string) => {
     if (t === symbol) return;
@@ -307,6 +326,7 @@ export default function Home() {
                 anchoredBands={anchoredBands}
                 earningsDates={earningsDates}
                 rsEvents={rs?.events ?? []}
+                optionsLevels={options}
                 onAnchorSelect={handleAnchorSelect}
                 showSma50={ma.sma50}
                 showSma200={ma.sma200}
@@ -316,6 +336,7 @@ export default function Home() {
               />
             </div>
             <StatsPanel currentPrice={currentPrice} bands={lastBands} />
+            {options && <OptionsLevelsPanel symbol={symbol} options={options} currentPrice={currentPrice} />}
           </>
         ) : null}
 
