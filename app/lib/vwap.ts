@@ -39,7 +39,8 @@ export function computeRollingVwapBands(bars: DailyBar[], window = 252): VwapBan
 }
 
 export function computeAnchoredVwapBands(bars: DailyBar[], anchorDate: string): VwapBands[] {
-  const idx = bars.findIndex((b) => b.date > anchorDate);
+  // Inclusive: the anchor day's own bar is the first bar of the accumulation.
+  const idx = bars.findIndex((b) => b.date >= anchorDate);
   if (idx === -1) return [];
 
   const result: VwapBands[] = [];

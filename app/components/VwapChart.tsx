@@ -3,21 +3,31 @@
 import { useEffect, useRef } from 'react';
 import {
   createChart,
+  createSeriesMarkers,
   IChartApi,
   ISeriesApi,
+  ISeriesMarkersPluginApi,
   ColorType,
   CrosshairMode,
   CandlestickSeries,
   LineSeries,
   HistogramSeries,
+  LineStyle,
+  Time,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/alphavantage';
 import { VwapBands, computeSMA, computeEMA } from '@/app/lib/vwap';
+import { RsEvent, eventsToEpisodes } from '@/app/lib/relativeStrength';
 import { EmaCloudPrimitive, CloudPoint } from './emaCloudPrimitive';
+import { RsEpisodePrimitive } from './rsEpisodePrimitive';
 
 interface Props {
   bars: DailyBar[];
   vwapBands: VwapBands[];
+  anchoredBands?: VwapBands[];
+  earningsDates?: string[];
+  rsEvents?: RsEvent[];
+  onAnchorSelect?: (date: string) => void;
   showSma50?: boolean;
   showSma200?: boolean;
   showEma50?: boolean;
@@ -35,9 +45,20 @@ function toTime(date: string) {
 
 const BAND_OPTS = { lastValueVisible: false, priceLineVisible: false } as const;
 
+// Relative-strength episodes render as shaded background zones (rsEpisodePrimitive);
+// only the rare "extreme" days keep a point marker.
+const RS_EXTREME_MARKER = {
+  obExtreme: { position: 'aboveBar' as const, color: '#ef4444', shape: 'square' as const, text: '!' },
+  osExtreme: { position: 'belowBar' as const, color: '#14b8a6', shape: 'square' as const, text: '!' },
+};
+
 export default function VwapChart({
   bars,
   vwapBands,
+  anchoredBands = [],
+  earningsDates = [],
+  rsEvents = [],
+  onAnchorSelect,
   showSma50 = false,
   showSma200 = false,
   showEma50 = false,
@@ -60,6 +81,15 @@ export default function VwapChart({
   const cloudRef  = useRef<EmaCloudPrimitive | null>(null);
   const ema50LineRef  = useRef<LineSer | null>(null);
   const ema200LineRef = useRef<LineSer | null>(null);
+  const avwapRef   = useRef<LineSer | null>(null);
+  const avwap1uRef = useRef<LineSer | null>(null);
+  const avwap1lRef = useRef<LineSer | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const rsZonesRef = useRef<RsEpisodePrimitive | null>(null);
+  const onAnchorSelectRef = useRef(onAnchorSelect);
+  useEffect(() => {
+    onAnchorSelectRef.current = onAnchorSelect;
+  }, [onAnchorSelect]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -116,6 +146,20 @@ export default function VwapChart({
     // Standalone EMA 50 / EMA 200 lines (exponential counterparts to the SMA lines).
     ema50LineRef.current  = chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, visible: false, ...BAND_OPTS });
     ema200LineRef.current = chart.addSeries(LineSeries, { color: '#f43f5e', lineWidth: 2, visible: false, ...BAND_OPTS });
+
+    // Anchored VWAP: solid amber line with dashed ±1σ.
+    avwapRef.current   = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, lastValueVisible: true, priceLineVisible: false });
+    avwap1uRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, lineStyle: LineStyle.Dashed, ...BAND_OPTS });
+    avwap1lRef.current = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 1, lineStyle: LineStyle.Dashed, ...BAND_OPTS });
+
+    markersRef.current = createSeriesMarkers(candleRef.current, []);
+    rsZonesRef.current = new RsEpisodePrimitive();
+    candleRef.current.attachPrimitive(rsZonesRef.current);
+
+    // Double-click a candle to (re)anchor the anchored VWAP there.
+    chart.subscribeDblClick((param) => {
+      if (typeof param.time === 'string') onAnchorSelectRef.current?.(param.time);
+    });
 
     const handleResize = () => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -199,6 +243,40 @@ export default function VwapChart({
     b2lRef.current?.setData(vwapBands.map((p) => ({ time: toTime(p.date), value: p.lower2 })));
 
   }, [vwapBands]);
+
+  useEffect(() => {
+    avwapRef.current?.setData(anchoredBands.map((p) => ({ time: toTime(p.date), value: p.vwap })));
+    avwap1uRef.current?.setData(anchoredBands.map((p) => ({ time: toTime(p.date), value: p.upper1 })));
+    avwap1lRef.current?.setData(anchoredBands.map((p) => ({ time: toTime(p.date), value: p.lower1 })));
+  }, [anchoredBands]);
+
+  useEffect(() => {
+    const dates = new Set(bars.map((b) => b.date));
+    const markers = [
+      ...earningsDates
+        .filter((d) => dates.has(d))
+        .map((d) => ({
+          time: toTime(d),
+          position: 'belowBar' as const,
+          color: '#fbbf24',
+          shape: 'arrowUp' as const,
+          text: 'E',
+        })),
+      ...rsEvents
+        .filter((e) => (e.type === 'obExtreme' || e.type === 'osExtreme') && dates.has(e.date))
+        .map((e) => ({ time: toTime(e.date), ...RS_EXTREME_MARKER[e.type as keyof typeof RS_EXTREME_MARKER] })),
+    ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    markersRef.current?.setMarkers(markers);
+
+    const lastDate = bars.length ? bars[bars.length - 1].date : null;
+    rsZonesRef.current?.setData(
+      lastDate
+        ? eventsToEpisodes(rsEvents, lastDate)
+            .filter((s) => dates.has(s.from))
+            .map((s) => ({ from: toTime(s.from), to: toTime(s.to), kind: s.kind }))
+        : []
+    );
+  }, [earningsDates, rsEvents, bars]);
 
   return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />;
 }

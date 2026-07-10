@@ -7,6 +7,9 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 ## Features
 
 - **Rolling VWAP** — 3M / 6M / 1Y window toggle (63 / 126 / 252 bars)
+- **Anchored VWAP** — double-click any candle to anchor a VWAP (amber, with dashed ±1σ) from that date, or anchor to the last earnings report with one click
+- **Earnings Markers** — past earnings report dates flagged on the chart (▲E, requires `ALPHA_VANTAGE_API_KEY`)
+- **Shareable / Persistent Views** — symbol, VWAP window, MA toggles, and anchor live in the URL and are remembered across visits
 - **Full 2Y Price History** — chart always shows all available data; window controls only the VWAP computation
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
 - **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
@@ -16,7 +19,25 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
 - **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
 - **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with divergence flags and a signal breakdown (see below)
-- **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`
+- **Relative Strength vs VOO** — RSI/ADX computed on the stock÷VOO price ratio, with overbought/oversold episode markers on the chart (see below)
+- **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`; a GitHub Action refreshes data every weeknight. The header shows a "Data as of" date that turns amber when data is >4 days old.
+
+The ticker list lives in one place — [`app/lib/tickers.json`](app/lib/tickers.json) — read by the UI, the API layer, and both data scripts.
+
+## Anchored VWAP & Earnings
+
+**Anchored VWAP** accumulates price×volume from a fixed start date instead of a rolling
+window — the classic way to ask "what's the average price everyone has paid *since event X*?"
+
+- **Double-click a candle** to anchor there (the anchor day's bar is included).
+- **⚓ Last earnings** anchors to the most recent earnings report date — earnings-anchored
+  VWAP is the common institutional variant.
+- Rendered as a solid amber line with dashed ±1σ bands; the anchor is part of the URL, so
+  an anchored view can be shared.
+
+**Earnings dates** come from Alpha Vantage (`app/api/earnings`), are cached for a day, and
+are drawn as amber ▲E markers under the bars. Without `ALPHA_VANTAGE_API_KEY` the markers
+and the earnings-anchor button simply don't appear — everything else works.
 
 ## Fear & Greed Gauge
 
@@ -137,6 +158,40 @@ investment advice**.
 
 Unit tests cover the indicators and divergence logic: `npm test`.
 
+## Relative Strength vs VOO
+
+A badge next to the sentiment rating (and episode markers on the chart) measures the stock
+**relative to the market** instead of in isolation — a port of a TradingView "relative
+strength RSI/MFI/ADX" indicator (`.resource/based-rsi-mfi-adx.pine`) to the local daily
+data, using **VOO** (already in `app/data/`) as the S&P 500 benchmark. Implementation:
+[`app/lib/relativeStrength.ts`](app/lib/relativeStrength.ts), served by
+`app/api/relative-strength`.
+
+Everything is computed on the **strength ratio** `stock ÷ VOO × 100`:
+
+- **r-RSI (14)** — is the *outperformance itself* overbought/oversold?
+- **r-ADX (14/14, Wilder)** — how strong is the relative trend? Episode starts are
+  suppressed while r-ADX < 20; ≥ 25 reads as a "strong relative trend".
+- **3M relative performance** — plain ratio change over 63 bars (outperforming /
+  underperforming readout on the badge).
+- **OB/OS episode machine** — stateful start/end events (not per-bar flicker): an episode
+  starts when r-RSI breaks its own adaptive threshold *and* makes a fresh 30-bar extreme
+  (or crosses a hard threshold), and ends when it decays or r-ADX rolls over. Extremes
+  (r-RSI + r-MFI + r-ADX all stretched) get a separate flag. Episodes are drawn on the
+  chart as shaded background zones — red = overbought stretch, teal = oversold stretch —
+  and extreme days get a ■! marker.
+- **Adaptive thresholds** — like the sentiment engine, OB/OS lines come from trailing
+  percentiles of the r-RSI's own history (clamped), not the Pine script's fixed 60/70/40/30.
+
+### Validation
+
+`npm run backtest:rs` (walk-forward; the engine is causal so one pass per ticker is
+honest). On the local ~2y sample: the **r-RSI level showed a small positive 20-day IC**
+(≈ +0.05 vs absolute, +0.03 vs relative forward returns) — weak, but notably better than
+the sentiment score (≈ 0) and than a plain 63-day relative-momentum baseline (≈ 0).
+**Episode events were near base rate** (n < 100 each; extremes n ≈ 15, unusable). Treat
+the badge as context, the markers as annotations — not trade signals. Not investment advice.
+
 ## Tech Stack
 
 - Next.js 16 (App Router) + TypeScript
@@ -207,9 +262,9 @@ git push
 vercel --prod
 ```
 
-## Automated weekly refresh
+## Automated daily refresh
 
-`.github/workflows/refresh-data.yml` runs every Saturday at 06:00 UTC (after Friday's US close), executes `fetch-data.mjs`, and commits any new bars back to `master`. Vercel auto-deploys on the push, so the live site always has fresh data without a manual rebuild.
+`.github/workflows/refresh-data.yml` runs every weeknight at 22:30 UTC (after the US market close), executes `fetch-data.mjs`, and commits any new bars back to `master`. Vercel auto-deploys on the push, so the live site always has fresh data without a manual rebuild.
 
 Manual trigger: GitHub → Actions → **Refresh stock data** → **Run workflow**.
 

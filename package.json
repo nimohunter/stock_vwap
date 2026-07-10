@@ -11,7 +11,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "backtest": "vite-node scripts/backtest-sentiment.ts"
+    "backtest": "vite-node scripts/backtest-sentiment.ts",
+    "backtest:rs": "vite-node scripts/backtest-rs.ts"
   },
   "dependencies": {
     "lightweight-charts": "^5.1.0",

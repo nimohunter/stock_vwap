@@ -1,6 +1,7 @@
 import { DailyBar } from './alphavantage';
 import fs from 'fs';
 import path from 'path';
+import tickers from './tickers.json';
 
 const DATA_DIR = path.join(process.cwd(), 'app/data');
 
@@ -17,4 +18,5 @@ export function loadLocalBars(symbol: string): DailyBar[] {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as DailyBar[];
 }
 
-export const LOCAL_TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'MU', 'VOO', 'SPMO', 'GLD'];
+// Single source of truth: app/lib/tickers.json (also read by scripts/fetch-data.mjs and scripts/download-data.py)
+export const LOCAL_TICKERS: string[] = tickers;

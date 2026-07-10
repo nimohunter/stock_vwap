@@ -2,8 +2,8 @@ name: Refresh stock data
 
 on:
   schedule:
-    # Every Saturday at 06:00 UTC (after Friday US market close)
-    - cron: '0 6 * * 6'
+    # Weeknights at 22:30 UTC — after US market close (20:00 UTC EDT / 21:00 UTC EST)
+    - cron: '30 22 * * 1-5'
   workflow_dispatch: {}
 
 permissions:
@@ -32,6 +32,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No data changes."
           else
-            git commit -m "chore(data): weekly refresh"
+            git commit -m "chore(data): daily refresh"
             git push
           fi

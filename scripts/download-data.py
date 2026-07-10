@@ -13,7 +13,7 @@ except ImportError:
     print("Install yfinance first:  pip install yfinance")
     sys.exit(1)
 
-TICKERS = ['NVDA', 'META', 'GOOGL', 'AAPL', 'MSFT', 'AMZN', 'TSLA', 'MU', 'VOO', 'SPMO', 'GLD']
+TICKERS = json.loads((Path(__file__).parent.parent / 'app' / 'lib' / 'tickers.json').read_text())
 OUT_DIR = Path(__file__).parent.parent / 'app' / 'data'
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 PERIOD = '2y'

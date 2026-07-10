@@ -107,6 +107,62 @@ export function cmf(bars: DailyBar[], period = 20): number | null {
   return vol === 0 ? 0 : mfv / vol;
 }
 
+/**
+ * Wilder's ADX (via the standard DMI method): trend *strength* on a 0–100 scale,
+ * direction-agnostic. Null until both smoothing stages have warmed up
+ * (index `len + smooth - 1`). Works on any high/low/close series, including
+ * synthetic ratio bars (relative-strength ADX).
+ */
+export function adxSeries(bars: Pick<DailyBar, 'high' | 'low' | 'close'>[], len = 14, smooth = 14): Series {
+  const n = bars.length;
+  const out: Series = new Array(n).fill(null);
+  if (n < len + smooth) return out;
+
+  const dx: Series = new Array(n).fill(null);
+  let aTR = 0;
+  let aPDM = 0;
+  let aMDM = 0;
+  for (let i = 1; i < n; i++) {
+    const h = bars[i].high;
+    const l = bars[i].low;
+    const pc = bars[i - 1].close;
+    const tr = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    const up = h - bars[i - 1].high;
+    const down = bars[i - 1].low - l;
+    const pdm = up > down && up > 0 ? up : 0;
+    const mdm = down > up && down > 0 ? down : 0;
+
+    if (i <= len) {
+      // Seed the Wilder averages with the SMA of the first `len` true values.
+      aTR += tr / len;
+      aPDM += pdm / len;
+      aMDM += mdm / len;
+      if (i < len) continue;
+    } else {
+      aTR = (aTR * (len - 1) + tr) / len;
+      aPDM = (aPDM * (len - 1) + pdm) / len;
+      aMDM = (aMDM * (len - 1) + mdm) / len;
+    }
+    const pDI = aTR > 0 ? (100 * aPDM) / aTR : 0;
+    const mDI = aTR > 0 ? (100 * aMDM) / aTR : 0;
+    const sum = pDI + mDI;
+    dx[i] = sum > 0 ? (100 * Math.abs(pDI - mDI)) / sum : 0;
+  }
+
+  let adx = 0;
+  for (let i = len; i < n; i++) {
+    const d = dx[i] as number;
+    if (i < len + smooth) {
+      adx += d / smooth;
+      if (i < len + smooth - 1) continue;
+    } else {
+      adx = (adx * (smooth - 1) + d) / smooth;
+    }
+    out[i] = adx;
+  }
+  return out;
+}
+
 /** Wilder's Average True Range; null until `period` bars. */
 export function atrSeries(bars: DailyBar[], period = 14): Series {
   const out: Series = new Array(bars.length).fill(null);
