@@ -1,16 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 import {
   atrSeries,
   bollingerPercentBSeries,
+  cciSeries,
   cmf,
   detectDivergence,
   emaSeries,
   findPivots,
   lastVal,
   mfiSeries,
+  momentumSeries,
   percentile,
   rsiSeries,
+  stochasticKD,
   stochasticSeries,
 } from './indicators';
 
@@ -148,5 +151,41 @@ describe('stochasticSeries', () => {
   it('is ~100 when the close prints at the top of the range', () => {
     const b = bars(Array.from({ length: 30 }, () => 10), { spread: 2 }).map((x) => ({ ...x, close: x.high }));
     expect(lastVal(stochasticSeries(b, 14, 3))!).toBeCloseTo(100, 4);
+  });
+});
+
+describe('stochasticKD', () => {
+  it('%K ~100 at the top of the range; %D lags %K by its smoothing', () => {
+    const b = bars(Array.from({ length: 40 }, () => 10), { spread: 2 }).map((x) => ({ ...x, close: x.high }));
+    const { k, d } = stochasticKD(b, 14, 3, 3);
+    expect(lastVal(k)!).toBeCloseTo(100, 4);
+    expect(lastVal(d)!).toBeCloseTo(100, 4);
+    // %D warms up 2 bars after %K (3-period SMA of %K).
+    const firstK = k.findIndex((v) => v !== null);
+    const firstD = d.findIndex((v) => v !== null);
+    expect(firstD - firstK).toBe(2);
+  });
+});
+
+describe('cciSeries', () => {
+  it('is strongly positive on a persistent uptrend, negative on a downtrend', () => {
+    const up = bars(Array.from({ length: 40 }, (_, i) => 100 + i));
+    const down = bars(Array.from({ length: 40 }, (_, i) => 200 - i));
+    expect(lastVal(cciSeries(up, 20))!).toBeGreaterThan(100);
+    expect(lastVal(cciSeries(down, 20))!).toBeLessThan(-100);
+  });
+  it('is null until `period` bars are available', () => {
+    const b = bars(Array.from({ length: 10 }, (_, i) => 100 + i));
+    expect(cciSeries(b, 20).every((v) => v === null)).toBe(true);
+  });
+});
+
+describe('momentumSeries', () => {
+  it('equals close minus close `period` bars ago', () => {
+    const closes = Array.from({ length: 20 }, (_, i) => i * i); // 0,1,4,9,...
+    const m = momentumSeries(closes, 10);
+    expect(m[9]).toBeNull();
+    expect(m[10]).toBe(closes[10] - closes[0]);
+    expect(lastVal(m)!).toBe(closes[19] - closes[9]);
   });
 });

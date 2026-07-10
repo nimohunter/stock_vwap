@@ -14,7 +14,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { DailyBar } from '../app/lib/alphavantage';
+import { DailyBar } from '../app/lib/bars';
 import { computeRsSeries, RS_DEFAULTS, RsEventType } from '../app/lib/relativeStrength';
 
 const HORIZONS = [5, 10, 20];
@@ -24,9 +24,10 @@ const DATA_DIR = path.join(process.cwd(), 'app', 'data');
 const BENCH = RS_DEFAULTS.benchmark;
 const loadBars = (t: string): DailyBar[] => JSON.parse(fs.readFileSync(path.join(DATA_DIR, `${t}.json`), 'utf-8'));
 
+// Plain OHLCV files only — skip sidecars like MU.options.json / MU.fundamentals.json.
 const tickers = fs
   .readdirSync(DATA_DIR)
-  .filter((f) => f.endsWith('.json'))
+  .filter((f) => /^[A-Z]+\.json$/.test(f))
   .map((f) => f.replace('.json', ''))
   .filter((t) => t !== BENCH);
 

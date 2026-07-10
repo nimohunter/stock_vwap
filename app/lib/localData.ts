@@ -1,4 +1,4 @@
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 import fs from 'fs';
 import path from 'path';
 import tickers from './tickers.json';

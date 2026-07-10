@@ -3,7 +3,7 @@
  * .resource/MU_analysis_prompt 120 days.txt) from local OHLCV + cached
  * fundamentals — paste it into any LLM chat for a structured analysis.
  */
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 import { Series, rsiSeries, mfiSeries, atrSeries, dmiSeries } from './indicators';
 import { computeEMA } from './vwap';
 import { Fundamentals } from './fundamentalsData';

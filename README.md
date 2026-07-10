@@ -6,7 +6,7 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 
 ## Features
 
-- **Rolling VWAP** — 3M / 6M / 1Y window toggle (63 / 126 / 252 bars)
+- **Rolling VWAP** — 3M / 6M / 1Y window toggle (63 / 126 / 252 bars); click the active window again to hide the VWAP + σ bands for a clean chart
 - **Anchored VWAP** — double-click any candle to anchor a VWAP (amber, with dashed ±1σ) from that date, or anchor to the last earnings report with one click
 - **Earnings Markers & Calendar** — past reports flagged on the chart (▲E, green = beat / red = miss) plus the next report date + EPS estimate, from yfinance
 - **Fundamentals Panel** — valuation, margins, balance sheet, short interest, and analyst consensus (mean target + upside) per stock
@@ -17,10 +17,10 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
 - **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
 - **11 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, MU, VOO, SPMO, GLD
-- **Moving Averages** — toggleable SMA 50/200 and EMA 50/200 overlays
+- **Moving Averages** — toggleable EMA 10/20/50/200 overlays (the 10/20/50 trend stack + the long-term 200)
 - **Ripster EMA Cloud 34/50** — trend-colored cloud between the 34 and 50 EMAs (see below)
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
-- **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with divergence flags and a signal breakdown (see below)
+- **Technical Rating** — per-stock Strong Sell → Strong Buy rating (−1…+1, TradingView-style two-group model) with divergence + extension flags and a signal breakdown (see below)
 - **Relative Strength vs VOO** — RSI/ADX computed on the stock÷VOO price ratio, with overbought/oversold episode markers on the chart (see below)
 - **Options Levels (MU)** — call wall / put wall / gamma flip drawn on the chart plus a GEX/P-C/IV panel, from a once-a-day FlashAlpha snapshot (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`; a GitHub Action refreshes data every weeknight. The header shows a "Data as of" date that turns amber when data is >4 days old.
@@ -68,9 +68,12 @@ all computed in [`app/lib/vwap.ts`](app/lib/vwap.ts) and drawn in
 
 | Overlay | Color | Calculation |
 |---------|-------|-------------|
-| SMA 50 / SMA 200 | orange / purple | Simple moving average (rolling mean of closes) |
+| EMA 10 / EMA 20 | orange / purple | Fast trend-stack legs (with EMA 50: bullish when 10>20>50) |
 | EMA 50 / EMA 200 | cyan / rose | Exponential moving average, `k = 2 / (window + 1)` |
 | EMA Cloud 34/50 | teal fill | Filled band between the EMA 34 and EMA 50 |
+
+The snapshot strip above the chart reports the current **EMA 10/20/50 stack** state
+(bullish / bearish / mixed) so you can check the stack without toggling the overlays on.
 
 **EMA seeding.** The EMA is seeded with the SMA of the first `window` closes, then
 iterated as `ema = close·k + ema_prev·(1 − k)`. This matches TradingView's `ta.ema`
@@ -88,49 +91,56 @@ area between the EMA 34 (fast) and EMA 50 (slow) lines:
 The cloud is rendered beneath the candles so price action stays readable on top. The
 34/50 pair is one of the most common Ripster cloud settings for swing/trend context.
 
-## Technical Sentiment Rating
+## Technical Rating (TradingView-style)
 
-Each stock gets a per-symbol **Strong Sell → Strong Buy** rating (0–100) shown above the
-chart, computed entirely from its own price/volume in
+Each stock gets a per-symbol **Strong Sell → Strong Buy** rating on a **−1 … +1** scale
+shown above the chart, computed entirely from its own price/volume in
 [`app/lib/sentiment.ts`](app/lib/sentiment.ts) (indicator math in
 [`app/lib/indicators.ts`](app/lib/indicators.ts); every tunable lives in
-[`app/lib/sentimentConfig.ts`](app/lib/sentimentConfig.ts)) — no analyst or news data
-(those sources aren't reliably reachable server-side). Signals are organized into **three
-weighted groups** (equal by default):
+[`app/lib/sentimentConfig.ts`](app/lib/sentimentConfig.ts)) — no analyst or news data.
+It follows the **TradingView Technical Rating** model: **two equally-weighted groups**,
+each averaging +1 / 0 / −1 votes into a group rating, then blended into the overall score.
 
-| Group | Signals | Notes |
-|-------|---------|-------|
-| **Trend** | EMA 50 vs 200, Price vs SMA 200, Price vs 1Y VWAP **(collapsed into one component)** + EMA Cloud 34/50 | de-duplicated so collinear trend-followers can't triple-count |
-| **Momentum** | RSI (14), Stochastic (14,3), MACD (12/26/9) | oscillator thresholds adapt to the stock's own percentiles |
-| **Money Flow** | Money Flow Index (14), Chaikin Money Flow (20) | volume-weighted buying/selling pressure |
+| Group | Votes |
+|-------|-------|
+| **Moving Averages** | Price vs EMA 10 / 20 / 50 / 100 / 200 · EMA-stack orderings (10 vs 20, 20 vs 50, 50 vs 200) · Price vs 1Y VWAP |
+| **Oscillators** | RSI (14) · Stochastic (14,3,3) · CCI (20) · ADX (14)/±DI · Momentum (10) · MACD (12/26/9) · Money Flow Index (14) · Chaikin Money Flow (20) |
 
-Key mechanics:
+Moving-average votes are `sign(price − MA)` / `sign(fast − slow)` — deliberately collinear,
+so the group rating measures **how much of the MA ladder price has cleared** (a graded
+trend-breadth gauge, not one signal counted many times). Oscillators use TradingView's
+**level + direction** rule (e.g. RSI votes buy only when it's oversold *and turning up*).
 
-- **De-redundant trend:** the three collinear trend-followers average into a *single*
-  component so an uptrend can't max the bucket by itself.
-- **Extension dampener:** the trend score is scaled down (to a floor of 0.4) as price
-  stretches beyond ~3 ATR from its EMA 50 — a parabolic move reads with less conviction.
-  Bollinger %B and ATR-distance are shown in the breakdown.
-- **Adaptive, regime-aware oscillators:** overbought/oversold come from each indicator's
-  own trailing percentiles, and are read relative to the trend (oversold in an uptrend =
-  bullish dip; overbought in a downtrend = bearish; otherwise tempered).
-- **Divergence detection:** price/RSI, price/MFI, and trend-vs-internals divergences are
-  flagged as a **separate badge**, not folded into the number.
+**Two deliberate improvements over TradingView, kept from the previous engine:**
 
-Bands (on the −1…+1 score): `≥0.5` Strong Buy · `≥0.15` Buy · `−0.15…0.15` Neutral ·
-`≤−0.15` Sell · `≤−0.5` Strong Sell.
+- **Adaptive overbought/oversold levels** — RSI/Stoch/CCI/MFI thresholds come from each
+  stock's own trailing percentiles (85th/15th over ~1y), not fixed 30/70 lines, so a
+  high-beta name like MU (which rarely prints RSI 30) doesn't go mute. Fixed values are
+  the fallback below 60 samples.
+- **Divergence badge** — price/RSI, price/MFI, and MA-vs-Oscillator group divergences are
+  surfaced as a **separate flag**, never folded into the number.
+
+**Extension** (ATR distance from EMA 50 + Bollinger %B) is shown as a `⚠ extended N.N ATR`
+badge when price is ≥ 3 ATR from its EMA 50 — informational, and (unlike the previous
+engine) **no longer secretly scales the score**, so the number stays comparable to
+TradingView's for the same ticker.
+
+Bands (on the −1…+1 score, matching TradingView): `≥0.5` Strong Buy · `>0.1` Buy ·
+`−0.1…0.1` Neutral · `<−0.1` Sell · `≤−0.5` Strong Sell.
 
 ### Validation (be honest about what this is)
 
 A walk-forward backtest (`npm run backtest`, no look-ahead) over the local ~2y history
-found the **score has ≈zero rank correlation with forward returns** and is **contrarian at
-short horizons** (in this mostly-bull sample, "Strong Sell" readings had the *highest*
-10-day forward returns — mean reversion). The **divergence flag** was weakly but correctly
-directional. So treat the rating as a **technical snapshot, not a return forecast** — the
-label mapping is *not* a validated buy/sell signal. This is a technical indicator, **not
-investment advice**.
+(11 tickers, ~3,500 samples) finds a **small positive rank IC at 10–20 days** (≈ +0.03 /
++0.04) and **≈zero at 5 days**. Label buckets are **non-monotonic and contrarian at short
+horizons**: in this mostly-bull sample "Strong Sell" readings had the *highest* forward
+returns (mean reversion) — though "Strong Buy" was second, so the extremes carry more
+signal than the middle. The **divergence flag** is weakly but correctly directional
+(bullish divergence beat the base rate at 10d). So treat the rating as a **technical
+snapshot, not a return forecast** — the label mapping is *not* a validated buy/sell signal.
+This is a technical indicator, **not investment advice**.
 
-Unit tests cover the indicators and divergence logic: `npm test`.
+Unit tests cover the indicators, the two-group rating, and divergence logic: `npm test`.
 
 ## Relative Strength vs VOO
 
@@ -193,7 +203,7 @@ in the `FLASHALPHA_API_KEY` GitHub Actions secret.
 - Next.js 16 (App Router) + TypeScript
 - Tailwind CSS
 - TradingView Lightweight Charts v5
-- Offline OHLCV data in `app/data/*.json` (2 years per ticker)
+- Offline data in `app/data/` (committed to the repo): `<T>.json` (≈2y daily OHLCV per ticker), plus `<T>.fundamentals.json` and `MU.options.json` sidecar caches
 
 ## Getting Started
 
@@ -220,9 +230,11 @@ This saves 2 years of daily OHLCV for all 11 tickers to `app/data/*.json`.
 npm run dev
 ```
 
-`predev` automatically runs `scripts/fetch-data.mjs` to refresh any data older than 20 hours before starting Next.js.
+`predev` automatically runs `scripts/fetch-data.mjs` (bars, refreshed once the last bar is
+over a day old) and `scripts/fetch-options-data.mjs` (options snapshot, ~1 query/day) before
+starting Next.js.
 
-Open [http://localhost:3001](http://localhost:3001).
+Open [http://localhost:3000](http://localhost:3000).
 
 ## Data Refresh
 
@@ -261,8 +273,8 @@ vercel --prod
 
 ## Automated daily refresh
 
-`.github/workflows/refresh-data.yml` runs every weeknight at 22:30 UTC (after the US market close), executes `fetch-data.mjs`, and commits any new bars back to `master`. Vercel auto-deploys on the push, so the live site always has fresh data without a manual rebuild.
+`.github/workflows/refresh-data.yml` runs every weeknight at 22:30 UTC (after the US market close) and commits any changes back to `master`, in three steps: `fetch-data.mjs` (bars), `fetch-options-data.mjs` (options snapshot), and `fetch-fundamentals.py` (fundamentals + earnings calendar). Vercel auto-deploys on the push, so the live site always has fresh data without a manual rebuild.
 
 Manual trigger: GitHub → Actions → **Refresh stock data** → **Run workflow**.
 
-To enable the Alpha Vantage fallback in the workflow, add `ALPHA_VANTAGE_API_KEY` under **Settings → Secrets and variables → Actions**.
+Optional secrets under **Settings → Secrets and variables → Actions** (repository secrets): `ALPHA_VANTAGE_API_KEY` (bars fallback) and `FLASHALPHA_API_KEY` (options levels). Without them those steps are silent no-ops and the last committed snapshot is kept.

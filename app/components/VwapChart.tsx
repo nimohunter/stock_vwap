@@ -16,8 +16,8 @@ import {
   Time,
   IPriceLine,
 } from 'lightweight-charts';
-import { DailyBar } from '@/app/lib/alphavantage';
-import { VwapBands, computeSMA, computeEMA } from '@/app/lib/vwap';
+import { DailyBar } from '@/app/lib/bars';
+import { VwapBands, computeEMA } from '@/app/lib/vwap';
 import { RsEvent, eventsToEpisodes } from '@/app/lib/relativeStrength';
 import { EmaCloudPrimitive, CloudPoint } from './emaCloudPrimitive';
 import { RsEpisodePrimitive } from './rsEpisodePrimitive';
@@ -30,8 +30,9 @@ interface Props {
   rsEvents?: RsEvent[];
   optionsLevels?: { callWall: number | null; putWall: number | null; gammaFlip: number | null } | null;
   onAnchorSelect?: (date: string) => void;
-  showSma50?: boolean;
-  showSma200?: boolean;
+  showVwap?: boolean;
+  showEma10?: boolean;
+  showEma20?: boolean;
   showEma50?: boolean;
   showEma200?: boolean;
   showEmaCloud?: boolean;
@@ -62,8 +63,9 @@ export default function VwapChart({
   rsEvents = [],
   optionsLevels = null,
   onAnchorSelect,
-  showSma50 = false,
-  showSma200 = false,
+  showVwap = true,
+  showEma10 = false,
+  showEma20 = false,
   showEma50 = false,
   showEma200 = false,
   showEmaCloud = false,
@@ -77,8 +79,8 @@ export default function VwapChart({
   const b0Ref  = useRef<LineSer | null>(null);
   const b1lRef = useRef<LineSer | null>(null);
   const b2lRef = useRef<LineSer | null>(null);
-  const sma50Ref  = useRef<LineSer | null>(null);
-  const sma200Ref = useRef<LineSer | null>(null);
+  const ema10LineRef = useRef<LineSer | null>(null);
+  const ema20LineRef = useRef<LineSer | null>(null);
   const ema34Ref  = useRef<LineSer | null>(null);
   const ema50Ref  = useRef<LineSer | null>(null);
   const cloudRef  = useRef<EmaCloudPrimitive | null>(null);
@@ -138,8 +140,9 @@ export default function VwapChart({
     b0Ref.current  = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 2, lastValueVisible: true, priceLineVisible: false });
     b1lRef.current = chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, ...BAND_OPTS });
     b2lRef.current = chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, ...BAND_OPTS });
-    sma50Ref.current  = chart.addSeries(LineSeries, { color: '#fb923c', lineWidth: 2, visible: false, ...BAND_OPTS });
-    sma200Ref.current = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, visible: false, ...BAND_OPTS });
+    // Fast EMA stack legs (10/20); with EMA 50 they form the 10>20>50 trend stack.
+    ema10LineRef.current = chart.addSeries(LineSeries, { color: '#fb923c', lineWidth: 2, visible: false, ...BAND_OPTS });
+    ema20LineRef.current = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, visible: false, ...BAND_OPTS });
 
     // Ripster EMA Cloud (34/50): two thin boundary lines + a trend-colored fill primitive.
     ema34Ref.current = chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 1, visible: false, ...BAND_OPTS });
@@ -188,11 +191,11 @@ export default function VwapChart({
         color: b.close >= b.open ? '#22c55e60' : '#ef444460',
       }))
     );
-    sma50Ref.current?.setData(
-      computeSMA(bars, 50).map((p) => ({ time: toTime(p.date), value: p.value }))
+    ema10LineRef.current?.setData(
+      computeEMA(bars, 10).map((p) => ({ time: toTime(p.date), value: p.value }))
     );
-    sma200Ref.current?.setData(
-      computeSMA(bars, 200).map((p) => ({ time: toTime(p.date), value: p.value }))
+    ema20LineRef.current?.setData(
+      computeEMA(bars, 20).map((p) => ({ time: toTime(p.date), value: p.value }))
     );
 
     const ema34 = computeEMA(bars, 34);
@@ -217,12 +220,18 @@ export default function VwapChart({
   }, [bars]);
 
   useEffect(() => {
-    sma50Ref.current?.applyOptions({ visible: showSma50 });
-  }, [showSma50]);
+    for (const ref of [b2uRef, b1uRef, b0Ref, b1lRef, b2lRef]) {
+      ref.current?.applyOptions({ visible: showVwap });
+    }
+  }, [showVwap]);
 
   useEffect(() => {
-    sma200Ref.current?.applyOptions({ visible: showSma200 });
-  }, [showSma200]);
+    ema10LineRef.current?.applyOptions({ visible: showEma10 });
+  }, [showEma10]);
+
+  useEffect(() => {
+    ema20LineRef.current?.applyOptions({ visible: showEma20 });
+  }, [showEma20]);
 
   useEffect(() => {
     ema34Ref.current?.applyOptions({ visible: showEmaCloud });

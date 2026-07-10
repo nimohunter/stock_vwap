@@ -15,7 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { DailyBar } from '../app/lib/alphavantage';
+import { DailyBar } from '../app/lib/bars';
 import { computeSentiment } from '../app/lib/sentiment';
 
 const HORIZONS = [5, 10, 20];
@@ -23,9 +23,10 @@ const MIN_HISTORY = 210; // need EMA200/SMA200 to be meaningful
 const STEP = 1;
 
 const DATA_DIR = path.join(process.cwd(), 'app', 'data');
+// Plain OHLCV files only — skip sidecars like MU.options.json / MU.fundamentals.json.
 const tickers = fs
   .readdirSync(DATA_DIR)
-  .filter((f) => f.endsWith('.json'))
+  .filter((f) => /^[A-Z]+\.json$/.test(f))
   .map((f) => f.replace('.json', ''));
 
 interface Sample {

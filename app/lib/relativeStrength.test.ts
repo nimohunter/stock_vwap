@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 import { adxSeries, Series } from './indicators';
 import {
   computeRsSeries,

@@ -4,7 +4,7 @@
  * line them up by index — required for divergence detection. Kept dependency-free
  * and side-effect-free so they can be unit-tested in isolation.
  */
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 
 export type Series = (number | null)[];
 
@@ -73,6 +73,66 @@ export function stochasticSeries(bars: DailyBar[], period = 14, smooth = 3): Ser
     }
     out[i] = n ? s / n : null;
   }
+  return out;
+}
+
+/**
+ * Slow stochastic: %K = `smoothK`-period SMA of raw fast %K(`period`); %D =
+ * `smoothD`-period SMA of %K. Both full-length (null during warm-up). This is
+ * TradingView's default Stochastic (14, 3, 3).
+ */
+export function stochasticKD(bars: DailyBar[], period = 14, smoothK = 3, smoothD = 3): { k: Series; d: Series } {
+  const raw: Series = new Array(bars.length).fill(null);
+  for (let i = period - 1; i < bars.length; i++) {
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (bars[j].high > hi) hi = bars[j].high;
+      if (bars[j].low < lo) lo = bars[j].low;
+    }
+    raw[i] = hi === lo ? 50 : (100 * (bars[i].close - lo)) / (hi - lo);
+  }
+  const sma = (src: Series, win: number): Series => {
+    const out: Series = new Array(src.length).fill(null);
+    for (let i = 0; i < src.length; i++) {
+      let s = 0;
+      let n = 0;
+      for (let j = i - win + 1; j <= i; j++) {
+        const v = j >= 0 ? src[j] : null;
+        if (v !== null) {
+          s += v;
+          n++;
+        }
+      }
+      if (n === win) out[i] = s / win;
+    }
+    return out;
+  };
+  const k = sma(raw, smoothK);
+  const d = sma(k, smoothD);
+  return { k, d };
+}
+
+/** Commodity Channel Index over `period`; null during warm-up. */
+export function cciSeries(bars: DailyBar[], period = 20): Series {
+  const out: Series = new Array(bars.length).fill(null);
+  const tp = bars.map((b) => (b.high + b.low + b.close) / 3);
+  for (let i = period - 1; i < bars.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += tp[j];
+    const mean = sum / period;
+    let dev = 0;
+    for (let j = i - period + 1; j <= i; j++) dev += Math.abs(tp[j] - mean);
+    const md = dev / period;
+    out[i] = md === 0 ? 0 : (tp[i] - mean) / (0.015 * md);
+  }
+  return out;
+}
+
+/** Momentum: close minus the close `period` bars ago; null during warm-up. */
+export function momentumSeries(closes: number[], period = 10): Series {
+  const out: Series = new Array(closes.length).fill(null);
+  for (let i = period; i < closes.length; i++) out[i] = closes[i] - closes[i - period];
   return out;
 }
 

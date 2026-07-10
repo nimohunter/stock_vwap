@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { DailyBar } from '@/app/lib/alphavantage';
+import { DailyBar } from '@/app/lib/bars';
 import { rsiSeries, atrSeries, dmiSeries, lastVal } from '@/app/lib/indicators';
 import { computeEMA } from '@/app/lib/vwap';
 

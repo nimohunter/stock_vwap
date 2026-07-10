@@ -8,7 +8,7 @@ import RelativeStrengthBadge from './components/RelativeStrengthBadge';
 import OptionsLevelsPanel from './components/OptionsLevelsPanel';
 import FundamentalsPanel from './components/FundamentalsPanel';
 import SnapshotStrip from './components/SnapshotStrip';
-import { DailyBar } from './lib/alphavantage';
+import { DailyBar } from './lib/bars';
 import { VwapBands } from './lib/vwap';
 import { RsResult } from './lib/relativeStrength';
 import { OptionsSummary } from './lib/optionsData';
@@ -22,7 +22,7 @@ const TICKERS: string[] = tickers;
 type Period = '3m' | '6m' | '1y';
 const PERIODS: Period[] = ['3m', '6m', '1y'];
 
-const MA_KEYS = ['sma50', 'sma200', 'ema50', 'ema200', 'cloud'] as const;
+const MA_KEYS = ['ema10', 'ema20', 'ema50', 'ema200', 'cloud'] as const;
 type MaKey = (typeof MA_KEYS)[number];
 
 const STORAGE_KEY = 'vwap-view';
@@ -32,22 +32,52 @@ function staleDays(lastBarDate: string): number {
   return Math.floor((Date.now() - lastMs) / (24 * 60 * 60 * 1000));
 }
 
+/**
+ * Fetch a per-key JSON resource, returning only the payload whose `key` matches the
+ * current one — a stale response for a previously-selected symbol derives back to
+ * `fallback` instead of flashing the wrong stock's data. Errors are swallowed (the
+ * caller renders `fallback`). Pass `url = null` to skip fetching (e.g. pre-hydration).
+ */
+function useKeyedResource<T>(
+  url: string | null,
+  key: string,
+  extract: (data: Record<string, unknown>) => T,
+  fallback: T,
+): T {
+  const [state, setState] = useState<{ key: string; value: T }>({ key: '', value: fallback });
+  useEffect(() => {
+    if (url === null) return;
+    let cancelled = false;
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && !data?.error) setState({ key, value: extract(data) });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [url, key, extract]);
+  return state.key === key ? state.value : fallback;
+}
+
+// Pure response extractors (module-level → stable identity for the effect deps).
+const pickAnchored = (d: Record<string, unknown>) => (d.anchoredBands ?? []) as VwapBands[];
+const pickFundamentals = (d: Record<string, unknown>) => (d.fundamentals ?? null) as Fundamentals | null;
+const pickRs = (d: Record<string, unknown>) => (d.rs ?? null) as RsResult | null;
+const pickOptions = (d: Record<string, unknown>) => (d.options ?? null) as OptionsSummary | null;
+
 export default function Home() {
   const [symbol, setSymbol] = useState('NVDA');
   const [chartData, setChartData] = useState<{
     key: string; bars: DailyBar[]; vwapBands: VwapBands[]; error: string | null;
   }>({ key: '', bars: [], vwapBands: [], error: null });
   const [period, setPeriod] = useState<Period>('1y');
+  const [showVwap, setShowVwap] = useState(true);
   const [ma, setMa] = useState<Record<MaKey, boolean>>({
-    sma50: false, sma200: false, ema50: false, ema200: false, cloud: false,
+    ema10: false, ema20: false, ema50: false, ema200: false, cloud: false,
   });
   const [anchor, setAnchor] = useState<string | null>(null);
-  // Keyed by what was fetched, so stale results for another symbol/anchor derive to empty
-  // instead of needing a synchronous clear inside the fetch effects.
-  const [anchoredData, setAnchoredData] = useState<{ key: string; bands: VwapBands[] }>({ key: '', bands: [] });
-  const [fundamentalsData, setFundamentalsData] = useState<{ sym: string; f: Fundamentals | null }>({ sym: '', f: null });
-  const [rsData, setRsData] = useState<{ sym: string; rs: RsResult | null }>({ sym: '', rs: null });
-  const [optionsData, setOptionsData] = useState<{ sym: string; options: OptionsSummary | null }>({ sym: '', options: null });
   const [hydrated, setHydrated] = useState(false);
 
   // Restore view state once on mount: URL params win, then localStorage, then defaults.
@@ -69,6 +99,9 @@ export default function Home() {
         setMa(Object.fromEntries(MA_KEYS.map((k) => [k, on.has(k)])) as Record<MaKey, boolean>);
       }
 
+      const vwapRaw = params.get('vwap') ?? stored.vwap;
+      if (vwapRaw === '0') setShowVwap(false);
+
       const a = params.get('anchor');
       if (a && /^\d{4}-\d{2}-\d{2}$/.test(a)) setAnchor(a);
     } catch {
@@ -86,10 +119,11 @@ export default function Home() {
     params.set('symbol', symbol);
     params.set('period', period);
     if (maStr) params.set('ma', maStr);
+    if (!showVwap) params.set('vwap', '0');
     if (anchor) params.set('anchor', anchor);
     window.history.replaceState(null, '', `?${params.toString()}`);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ symbol, period, ma: maStr }));
-  }, [hydrated, symbol, period, ma, anchor]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ symbol, period, ma: maStr, vwap: showVwap ? '1' : '0' }));
+  }, [hydrated, symbol, period, ma, anchor, showVwap]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -115,69 +149,21 @@ export default function Home() {
   const error = loaded ? chartData.error : null;
   const loading = hydrated && !loaded;
 
-  // Anchored VWAP for the current anchor date (derives to empty on symbol change).
-  useEffect(() => {
-    if (!hydrated || !anchor) return;
-    const key = `${symbol}|${anchor}`;
-    let cancelled = false;
-    fetch(`/api/anchored-vwap?symbol=${symbol}&anchor=${anchor}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setAnchoredData({ key, bands: data.anchoredBands ?? [] });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [hydrated, symbol, anchor]);
+  // Per-symbol sidecar data, each fetched from its own local-cache API route and keyed so
+  // a stale response for a previously-selected symbol never renders (see useKeyedResource).
+  const gate = (path: string) => (hydrated ? path : null);
+  const anchoredBands = useKeyedResource(
+    hydrated && anchor ? `/api/anchored-vwap?symbol=${symbol}&anchor=${anchor}` : null,
+    `${symbol}|${anchor}`,
+    pickAnchored,
+    [] as VwapBands[],
+  );
+  const fundamentals = useKeyedResource(gate(`/api/fundamentals?symbol=${symbol}`), symbol, pickFundamentals, null);
+  const rs = useKeyedResource(gate(`/api/relative-strength?symbol=${symbol}`), symbol, pickRs, null);
+  const options = useKeyedResource(gate(`/api/options-levels?symbol=${symbol}`), symbol, pickOptions, null);
 
-  // Fundamentals + earnings calendar (yfinance, local daily cache; ETFs return sparse data).
-  useEffect(() => {
-    if (!hydrated) return;
-    let cancelled = false;
-    fetch(`/api/fundamentals?symbol=${symbol}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled || data.error) return;
-        setFundamentalsData({ sym: symbol, f: data.fundamentals ?? null });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [hydrated, symbol]);
-
-  // Relative strength vs the benchmark (null for the benchmark itself).
-  useEffect(() => {
-    if (!hydrated) return;
-    let cancelled = false;
-    fetch(`/api/relative-strength?symbol=${symbol}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled || data.error) return;
-        setRsData({ sym: symbol, rs: data.rs ?? null });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [hydrated, symbol]);
-
-  // Options levels (call/put wall, GEX…) — served from a local daily cache; only
-  // symbols with a <TICKER>.options.json data file return anything (currently MU).
-  useEffect(() => {
-    if (!hydrated) return;
-    let cancelled = false;
-    fetch(`/api/options-levels?symbol=${symbol}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled || data.error) return;
-        setOptionsData({ sym: symbol, options: data.options ?? null });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [hydrated, symbol]);
-
-  const anchoredBands = anchor && anchoredData.key === `${symbol}|${anchor}` ? anchoredData.bands : [];
-  const fundamentals = fundamentalsData.sym === symbol ? fundamentalsData.f : null;
   const pastEarnings = fundamentals?.earnings.past ?? [];
   const earningsDates = pastEarnings.map((e) => e.date);
-  const rs = rsData.sym === symbol ? rsData.rs : null;
-  const options = optionsData.sym === symbol ? optionsData.options : null;
 
   const selectSymbol = (t: string) => {
     if (t === symbol) return;
@@ -199,8 +185,8 @@ export default function Home() {
     : null;
 
   const MA_BUTTONS: { key: MaKey; label: string; activeClass: string }[] = [
-    { key: 'sma50', label: 'SMA 50', activeClass: 'bg-orange-500' },
-    { key: 'sma200', label: 'SMA 200', activeClass: 'bg-purple-500' },
+    { key: 'ema10', label: 'EMA 10', activeClass: 'bg-orange-500' },
+    { key: 'ema20', label: 'EMA 20', activeClass: 'bg-purple-500' },
     { key: 'ema50', label: 'EMA 50', activeClass: 'bg-cyan-500' },
     { key: 'ema200', label: 'EMA 200', activeClass: 'bg-rose-500' },
     { key: 'cloud', label: 'EMA Cloud 34/50', activeClass: 'bg-teal-500' },
@@ -222,19 +208,29 @@ export default function Home() {
           </div>
           <div className="flex flex-col items-end gap-3">
             <div className="flex flex-col items-end gap-1">
-              <span className="text-xs text-slate-500">VWAP Window</span>
+              <span className="text-xs text-slate-500">Rolling VWAP ±σ</span>
               <div className="flex rounded-lg overflow-hidden border border-slate-600">
-                {PERIODS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className={`px-5 py-2 text-sm font-medium transition-colors ${
-                      period === p ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {p.toUpperCase()}
-                  </button>
-                ))}
+                {PERIODS.map((p) => {
+                  const active = showVwap && period === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        if (active) {
+                          setShowVwap(false); // click the lit window again → hide VWAP
+                        } else {
+                          setPeriod(p);
+                          setShowVwap(true);
+                        }
+                      }}
+                      className={`px-5 py-2 text-sm font-medium transition-colors ${
+                        active ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {p.toUpperCase()}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="flex flex-col items-end gap-1">
@@ -326,8 +322,9 @@ export default function Home() {
                 rsEvents={rs?.events ?? []}
                 optionsLevels={options}
                 onAnchorSelect={handleAnchorSelect}
-                showSma50={ma.sma50}
-                showSma200={ma.sma200}
+                showVwap={showVwap}
+                showEma10={ma.ema10}
+                showEma20={ma.ema20}
                 showEma50={ma.ema50}
                 showEma200={ma.ema200}
                 showEmaCloud={ma.cloud}
@@ -343,11 +340,15 @@ export default function Home() {
 
         {bars.length > 0 && (
           <div className="flex flex-wrap gap-4 mt-4 text-xs text-slate-400">
-            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-red-500 inline-block" /> +2σ</span>
-            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-yellow-500 inline-block" /> +1σ</span>
-            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-blue-400 inline-block" /> VWAP</span>
-            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-green-500 inline-block" /> -1σ</span>
-            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-pink-500 inline-block" /> -2σ</span>
+            {showVwap && (
+              <>
+                <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-red-500 inline-block" /> +2σ</span>
+                <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-yellow-500 inline-block" /> +1σ</span>
+                <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-blue-400 inline-block" /> VWAP</span>
+                <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-green-500 inline-block" /> -1σ</span>
+                <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-pink-500 inline-block" /> -2σ</span>
+              </>
+            )}
             {anchor && anchoredBands.length > 0 && (
               <span className="flex items-center gap-1.5">
                 <span className="w-4 h-0.5 bg-amber-500 inline-block" /> Anchored VWAP ±1σ (from {anchor})
@@ -378,11 +379,11 @@ export default function Home() {
                 )}
               </>
             )}
-            {ma.sma50 && (
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-orange-400 inline-block" /> SMA 50</span>
+            {ma.ema10 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-orange-400 inline-block" /> EMA 10</span>
             )}
-            {ma.sma200 && (
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> SMA 200</span>
+            {ma.ema20 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> EMA 20</span>
             )}
             {ma.ema50 && (
               <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-cyan-400 inline-block" /> EMA 50</span>

@@ -1,4 +1,4 @@
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 
 export interface VwapPoint {
   date: string;

@@ -15,7 +15,7 @@
  *  - The episode state machine is causal (bar i uses only data ≤ i), so a single
  *    full-series pass is already walk-forward — the backtest reuses it directly.
  */
-import { DailyBar } from './alphavantage';
+import { DailyBar } from './bars';
 import { Series, rsiSeries, mfiSeries, adxSeries, percentile } from './indicators';
 
 export type RsEventType = 'obStart' | 'obEnd' | 'osStart' | 'osEnd' | 'obExtreme' | 'osExtreme';
