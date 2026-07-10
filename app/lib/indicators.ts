@@ -108,15 +108,21 @@ export function cmf(bars: DailyBar[], period = 20): number | null {
 }
 
 /**
- * Wilder's ADX (via the standard DMI method): trend *strength* on a 0–100 scale,
- * direction-agnostic. Null until both smoothing stages have warmed up
- * (index `len + smooth - 1`). Works on any high/low/close series, including
- * synthetic ratio bars (relative-strength ADX).
+ * Wilder's DMI: directional lines (+DI/−DI, available from index `len`) and ADX
+ * (trend strength 0–100, direction-agnostic, available from `len + smooth - 1`).
+ * Works on any high/low/close series, including synthetic ratio bars
+ * (relative-strength ADX).
  */
-export function adxSeries(bars: Pick<DailyBar, 'high' | 'low' | 'close'>[], len = 14, smooth = 14): Series {
+export function dmiSeries(
+  bars: Pick<DailyBar, 'high' | 'low' | 'close'>[],
+  len = 14,
+  smooth = 14,
+): { adx: Series; plusDi: Series; minusDi: Series } {
   const n = bars.length;
   const out: Series = new Array(n).fill(null);
-  if (n < len + smooth) return out;
+  const plusDi: Series = new Array(n).fill(null);
+  const minusDi: Series = new Array(n).fill(null);
+  if (n < len + smooth) return { adx: out, plusDi, minusDi };
 
   const dx: Series = new Array(n).fill(null);
   let aTR = 0;
@@ -145,6 +151,8 @@ export function adxSeries(bars: Pick<DailyBar, 'high' | 'low' | 'close'>[], len 
     }
     const pDI = aTR > 0 ? (100 * aPDM) / aTR : 0;
     const mDI = aTR > 0 ? (100 * aMDM) / aTR : 0;
+    plusDi[i] = pDI;
+    minusDi[i] = mDI;
     const sum = pDI + mDI;
     dx[i] = sum > 0 ? (100 * Math.abs(pDI - mDI)) / sum : 0;
   }
@@ -160,7 +168,12 @@ export function adxSeries(bars: Pick<DailyBar, 'high' | 'low' | 'close'>[], len 
     }
     out[i] = adx;
   }
-  return out;
+  return { adx: out, plusDi, minusDi };
+}
+
+/** ADX only (see dmiSeries). */
+export function adxSeries(bars: Pick<DailyBar, 'high' | 'low' | 'close'>[], len = 14, smooth = 14): Series {
+  return dmiSeries(bars, len, smooth).adx;
 }
 
 /** Wilder's Average True Range; null until `period` bars. */

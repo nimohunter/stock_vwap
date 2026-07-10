@@ -29,6 +29,15 @@ jobs:
           FLASHALPHA_API_KEY: ${{ secrets.FLASHALPHA_API_KEY }}
         run: node scripts/fetch-options-data.mjs
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch fundamentals + earnings calendar (yfinance)
+        run: |
+          pip install --quiet yfinance lxml
+          python3 scripts/fetch-fundamentals.py
+
       - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"

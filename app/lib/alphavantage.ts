@@ -10,12 +10,6 @@ export interface DailyBar {
   volume: number;
 }
 
-export interface EarningsDate {
-  reportedDate: string;
-  fiscalDateEnding: string;
-  quarter: string;
-}
-
 export async function fetchDailyBars(symbol: string): Promise<DailyBar[]> {
   // outputsize=full is premium-only; compact returns last 100 trading days (free tier)
   const url = `${BASE_URL}?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${API_KEY}`;
@@ -46,30 +40,3 @@ export async function fetchDailyBars(symbol: string): Promise<DailyBar[]> {
   return bars;
 }
 
-export async function fetchEarningsDates(symbol: string): Promise<EarningsDate[]> {
-  const url = `${BASE_URL}?function=EARNINGS&symbol=${symbol}&apikey=${API_KEY}`;
-  const res = await fetch(url, { next: { revalidate: 86400 } });
-  const json = await res.json();
-
-  if (json['Note'] || json['Information']) {
-    throw new Error('Alpha Vantage rate limit hit');
-  }
-
-  const quarterly: unknown[] = json['quarterlyEarnings'] ?? [];
-  return quarterly
-    .slice(0, 8)
-    .filter((e: unknown) => {
-      const entry = e as Record<string, string>;
-      return entry['reportedDate'] && entry['reportedDate'] !== 'None';
-    })
-    .map((e: unknown, i: number) => {
-      const entry = e as Record<string, string>;
-      const fiscal = entry['fiscalDateEnding'] ?? '';
-      const month = new Date(fiscal).toLocaleString('en-US', { month: 'short', year: 'numeric' });
-      return {
-        reportedDate: entry['reportedDate'],
-        fiscalDateEnding: fiscal,
-        quarter: `Q${4 - (i % 4)} ${month}`,
-      };
-    });
-}

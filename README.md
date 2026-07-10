@@ -8,7 +8,10 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 
 - **Rolling VWAP** — 3M / 6M / 1Y window toggle (63 / 126 / 252 bars)
 - **Anchored VWAP** — double-click any candle to anchor a VWAP (amber, with dashed ±1σ) from that date, or anchor to the last earnings report with one click
-- **Earnings Markers** — past earnings report dates flagged on the chart (▲E, requires `ALPHA_VANTAGE_API_KEY`)
+- **Earnings Markers & Calendar** — past reports flagged on the chart (▲E, green = beat / red = miss) plus the next report date + EPS estimate, from yfinance
+- **Fundamentals Panel** — valuation, margins, balance sheet, short interest, and analyst consensus (mean target + upside) per stock
+- **Snapshot Strip** — 1D/5D/10D returns, EMA 10/20/50 stack, RSI trajectory, ADX/DI trend read, ATR, and relative volume above the chart
+- **Copy AI Analysis Prompt** — one click builds a full LLM prompt (120-day raw technicals + fundamentals + analyst task) for any ticker, ready to paste into an AI chat
 - **Shareable / Persistent Views** — symbol, VWAP window, MA toggles, and anchor live in the URL and are remembered across visits
 - **Full 2Y Price History** — chart always shows all available data; window controls only the VWAP computation
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
@@ -17,7 +20,6 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Moving Averages** — toggleable SMA 50/200 and EMA 50/200 overlays
 - **Ripster EMA Cloud 34/50** — trend-colored cloud between the 34 and 50 EMAs (see below)
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
-- **Fear & Greed Gauge** — market-sentiment banner; extreme readings are highlighted as contrarian signals (see below)
 - **Technical Sentiment Rating** — per-stock Strong Sell → Strong Buy score with divergence flags and a signal breakdown (see below)
 - **Relative Strength vs VOO** — RSI/ADX computed on the stock÷VOO price ratio, with overbought/oversold episode markers on the chart (see below)
 - **Options Levels (MU)** — call wall / put wall / gamma flip drawn on the chart plus a GEX/P-C/IV panel, from a once-a-day FlashAlpha snapshot (see below)
@@ -36,56 +38,27 @@ window — the classic way to ask "what's the average price everyone has paid *s
 - Rendered as a solid amber line with dashed ±1σ bands; the anchor is part of the URL, so
   an anchored view can be shared.
 
-**Earnings dates** come from Alpha Vantage (`app/api/earnings`), are cached for a day, and
-are drawn as amber ▲E markers under the bars. Without `ALPHA_VANTAGE_API_KEY` the markers
-and the earnings-anchor button simply don't appear — everything else works.
+**Earnings dates** come from the cached yfinance fundamentals (see below) and are drawn
+as ▲E markers under the bars — green when the report beat the EPS estimate, red when it
+missed, amber when no estimate exists.
 
-## Fear & Greed Gauge
+## Fundamentals, Earnings Calendar & AI Analysis Prompt
 
-A banner at the top of the page shows current market sentiment on a 0–100 scale
-(Extreme Fear → Extreme Greed), mirroring [CNN's Fear & Greed Index](https://edition.cnn.com/markets/fear-and-greed).
-Extreme readings are visually highlighted (⚡ + colored ring) because they can act
-as contrarian signals — extreme fear may flag a buying opportunity, extreme greed a
-time for caution.
+`scripts/fetch-fundamentals.py` (yfinance, no API key) caches one
+`app/data/<TICKER>.fundamentals.json` per ticker daily — valuation (P/E, PEG, EV/EBITDA),
+profitability, balance sheet, short interest, analyst consensus (recommendation, mean/high/low
+target, analyst count), and the earnings calendar (next report date + EPS estimate, past
+reports with surprise %). It skips while the cache is under 20h old; the nightly GitHub
+Action refreshes and commits it. ETFs simply store nulls and get no panel.
 
-**Data source (`app/lib/fearGreed.ts`, served by `app/api/fear-greed`):**
-
-1. **CNN first** — tries CNN's official index. CNN bot-blocks data-center IPs, so this
-   often fails on hosted environments.
-2. **Computed fallback** — when CNN is unavailable, a CNN-style index is computed from
-   live Yahoo Finance data and the badge switches from `CNN` to `estimate`. The "how?"
-   toggle on the banner explains this and shows the sub-signal breakdown.
-
-### How the estimate is calculated
-
-1. **Fetch 1 year of daily closes** (in parallel, tolerating individual failures) for
-   five symbols: `^GSPC` (S&P 500), `^VIX`, `TLT` (long bonds), `HYG` (junk bonds),
-   `LQD` (investment-grade bonds).
-
-2. **Score each sub-signal 0–100** (100 = maximum greed) with a clamped linear map:
-
-   ```
-   norm(x, lo, hi) = clamp01((x - lo) / (hi - lo)) * 100
-   ```
-
-   | Sub-signal | Raw value `x` | `lo` → `hi` |
-   |------------|---------------|-------------|
-   | Market Momentum | S&P close ÷ its 125-day average − 1 | −0.10 → +0.10 |
-   | Price Strength | S&P close, within its 52-week low/high range | 52w low → 52w high |
-   | Volatility (VIX) | VIX ÷ its 50-day average | 1.15 → 0.85 *(inverted: low VIX = greed)* |
-   | Safe Haven Demand | 20-day return of S&P − 20-day return of TLT | −0.05 → +0.05 |
-   | Junk Bond Demand | 20-day return of HYG − 20-day return of LQD | −0.03 → +0.03 |
-
-3. **Average** the available components and round to get the 0–100 score. (A symbol that
-   fails to fetch is simply dropped from the average.)
-
-4. **Map to a label** (same bands as CNN): `<25` Extreme Fear · `25–44` Fear ·
-   `45–55` Neutral · `56–75` Greed · `>75` Extreme Greed.
-
-> The `lo`/`hi` bounds are hand-chosen heuristics and the index uses 5 signals where CNN
-> uses 7 (CNN's put/call ratio and NYSE breadth aren't cleanly available from free data).
-> So the computed number is **directionally** aligned with CNN but won't match it exactly —
-> hence the `estimate` badge. Source of truth: [`app/lib/fearGreed.ts`](app/lib/fearGreed.ts).
+On the page this powers:
+- the **Fundamentals panel** below the stats (with "% to mean target" and "next earnings in N days"),
+- the **snapshot strip** above the chart (returns, EMA stack, RSI/ADX/ATR, relative volume — computed client-side from the local bars),
+- the **⧉ Copy AI analysis prompt** button, which assembles the full institutional-analyst
+  prompt — 120 days of raw daily technicals (EMA 10/20/50, RSI, MFI, ADX/±DI, ATR, relative
+  volume as JSONL) plus the fundamentals block and a structured task — via
+  `app/api/analysis-prompt` ([`app/lib/analysisPrompt.ts`](app/lib/analysisPrompt.ts)).
+  Paste it into any LLM chat for a technical + fundamental read. Not investment advice.
 
 ## Moving Averages & Ripster EMA Cloud
 
@@ -264,7 +237,7 @@ Open [http://localhost:3001](http://localhost:3001).
 
 ```bash
 # .env.local
-ALPHA_VANTAGE_API_KEY=your_key_here   # fallback data source + earnings markers, free at alphavantage.co
+ALPHA_VANTAGE_API_KEY=your_key_here   # fallback daily-bars source, free at alphavantage.co
 FLASHALPHA_API_KEY=your_key_here      # options levels (5 queries/day free tier, MU only)
 ```
 

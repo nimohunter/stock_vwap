@@ -26,7 +26,7 @@ interface Props {
   bars: DailyBar[];
   vwapBands: VwapBands[];
   anchoredBands?: VwapBands[];
-  earningsDates?: string[];
+  earnings?: { date: string; surprisePct: number | null }[];
   rsEvents?: RsEvent[];
   optionsLevels?: { callWall: number | null; putWall: number | null; gammaFlip: number | null } | null;
   onAnchorSelect?: (date: string) => void;
@@ -58,7 +58,7 @@ export default function VwapChart({
   bars,
   vwapBands,
   anchoredBands = [],
-  earningsDates = [],
+  earnings = [],
   rsEvents = [],
   optionsLevels = null,
   onAnchorSelect,
@@ -257,12 +257,13 @@ export default function VwapChart({
   useEffect(() => {
     const dates = new Set(bars.map((b) => b.date));
     const markers = [
-      ...earningsDates
-        .filter((d) => dates.has(d))
-        .map((d) => ({
-          time: toTime(d),
+      // Earnings: green = beat, red = miss, amber = no estimate data.
+      ...earnings
+        .filter((e) => dates.has(e.date))
+        .map((e) => ({
+          time: toTime(e.date),
           position: 'belowBar' as const,
-          color: '#fbbf24',
+          color: e.surprisePct === null ? '#fbbf24' : e.surprisePct >= 0 ? '#22c55e' : '#ef4444',
           shape: 'arrowUp' as const,
           text: 'E',
         })),
@@ -280,7 +281,7 @@ export default function VwapChart({
             .map((s) => ({ from: toTime(s.from), to: toTime(s.to), kind: s.kind }))
         : []
     );
-  }, [earningsDates, rsEvents, bars]);
+  }, [earnings, rsEvents, bars]);
 
   useEffect(() => {
     const candle = candleRef.current;

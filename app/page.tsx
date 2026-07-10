@@ -3,14 +3,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import StatsPanel from './components/StatsPanel';
-import FearGreedGauge from './components/FearGreedGauge';
 import SentimentRating from './components/SentimentRating';
 import RelativeStrengthBadge from './components/RelativeStrengthBadge';
 import OptionsLevelsPanel from './components/OptionsLevelsPanel';
+import FundamentalsPanel from './components/FundamentalsPanel';
+import SnapshotStrip from './components/SnapshotStrip';
 import { DailyBar } from './lib/alphavantage';
 import { VwapBands } from './lib/vwap';
 import { RsResult } from './lib/relativeStrength';
 import { OptionsSummary } from './lib/optionsData';
+import { Fundamentals } from './lib/fundamentalsData';
 import tickers from './lib/tickers.json';
 
 const VwapChart = dynamic(() => import('./components/VwapChart'), { ssr: false });
@@ -43,7 +45,7 @@ export default function Home() {
   // Keyed by what was fetched, so stale results for another symbol/anchor derive to empty
   // instead of needing a synchronous clear inside the fetch effects.
   const [anchoredData, setAnchoredData] = useState<{ key: string; bands: VwapBands[] }>({ key: '', bands: [] });
-  const [earningsData, setEarningsData] = useState<{ sym: string; dates: string[] }>({ sym: '', dates: [] });
+  const [fundamentalsData, setFundamentalsData] = useState<{ sym: string; f: Fundamentals | null }>({ sym: '', f: null });
   const [rsData, setRsData] = useState<{ sym: string; rs: RsResult | null }>({ sym: '', rs: null });
   const [optionsData, setOptionsData] = useState<{ sym: string; options: OptionsSummary | null }>({ sym: '', options: null });
   const [hydrated, setHydrated] = useState(false);
@@ -127,18 +129,15 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [hydrated, symbol, anchor]);
 
-  // Earnings dates (needs ALPHA_VANTAGE_API_KEY server-side; silently absent otherwise).
+  // Fundamentals + earnings calendar (yfinance, local daily cache; ETFs return sparse data).
   useEffect(() => {
     if (!hydrated) return;
     let cancelled = false;
-    fetch(`/api/earnings?symbol=${symbol}`)
+    fetch(`/api/fundamentals?symbol=${symbol}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled || data.error) return;
-        const dates = (data.earnings ?? [])
-          .map((e: { reportedDate: string }) => e.reportedDate)
-          .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d));
-        setEarningsData({ sym: symbol, dates });
+        setFundamentalsData({ sym: symbol, f: data.fundamentals ?? null });
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -174,7 +173,9 @@ export default function Home() {
   }, [hydrated, symbol]);
 
   const anchoredBands = anchor && anchoredData.key === `${symbol}|${anchor}` ? anchoredData.bands : [];
-  const earningsDates = earningsData.sym === symbol ? earningsData.dates : [];
+  const fundamentals = fundamentalsData.sym === symbol ? fundamentalsData.f : null;
+  const pastEarnings = fundamentals?.earnings.past ?? [];
+  const earningsDates = pastEarnings.map((e) => e.date);
   const rs = rsData.sym === symbol ? rsData.rs : null;
   const options = optionsData.sym === symbol ? optionsData.options : null;
 
@@ -281,10 +282,6 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <FearGreedGauge />
-        </div>
-
         <div className="flex gap-2 flex-wrap mb-6">
           {TICKERS.map((t) => (
             <button
@@ -319,12 +316,13 @@ export default function Home() {
               </div>
               {rs && <RelativeStrengthBadge symbol={symbol} rs={rs} />}
             </div>
+            <SnapshotStrip symbol={symbol} bars={bars} />
             <div className="bg-slate-800 rounded-lg p-2">
               <VwapChart
                 bars={bars}
                 vwapBands={vwapBands}
                 anchoredBands={anchoredBands}
-                earningsDates={earningsDates}
+                earnings={pastEarnings}
                 rsEvents={rs?.events ?? []}
                 optionsLevels={options}
                 onAnchorSelect={handleAnchorSelect}
@@ -337,6 +335,9 @@ export default function Home() {
             </div>
             <StatsPanel currentPrice={currentPrice} bands={lastBands} />
             {options && <OptionsLevelsPanel symbol={symbol} options={options} currentPrice={currentPrice} />}
+            {fundamentals && (
+              <FundamentalsPanel symbol={symbol} fundamentals={fundamentals} currentPrice={currentPrice} lastBarDate={lastBarDate} />
+            )}
           </>
         ) : null}
 
@@ -354,7 +355,8 @@ export default function Home() {
             )}
             {earningsDates.length > 0 && (
               <span className="flex items-center gap-1.5">
-                <span className="text-amber-400">▲E</span> earnings report
+                <span className="text-green-400">▲E</span>/<span className="text-red-400">▲E</span> earnings report
+                <span className="text-slate-500">(green = beat, red = miss)</span>
               </span>
             )}
             {rs && rs.events.length > 0 && (
