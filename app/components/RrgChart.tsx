@@ -58,6 +58,10 @@ export default function RrgChart({ data }: Props) {
   const cx = sx(100);
   const cy = sy(100);
 
+  // Tail settings for the selected duration, surfaced under the description.
+  const { tailLength, tailStride, window: rrgWindow } = RRG_CONFIGS[tf];
+  const tailDays = (tailLength - 1) * tailStride; // trading days from oldest to newest point
+
   return (
     <section className="bg-slate-800 rounded-lg p-4">
       <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
@@ -66,6 +70,10 @@ export default function RrgChart({ data }: Props) {
           <p className="text-xs text-slate-400 mt-0.5">
             RS-Ratio (x) vs RS-Momentum (y) around 100, vs {data.benchmark.ticker}, over a {tf} horizon. Sectors rotate
             clockwise Improving → Leading → Weakening → Lagging.
+          </p>
+          <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+            {tf} tail: {tailLength} points · {tailStride} trading {tailStride === 1 ? 'day' : 'days'} apart · spans ~
+            {tailDays} trading days (~{Math.round(tailDays / 5)} wk) · RS normalized over {rrgWindow} days
           </p>
         </div>
         <div className="flex shrink-0 rounded-lg overflow-hidden border border-slate-600 flex-wrap">
