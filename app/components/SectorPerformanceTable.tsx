@@ -100,7 +100,7 @@ export default function SectorPerformanceTable({ data }: Props) {
         <div>
           <h2 className="text-lg font-semibold text-white">Sector Performance</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            SPDR sector ETFs, sorted by return · {TF_LABEL[tf]}
+            Sector &amp; industry ETFs, sorted by return · {TF_LABEL[tf]}
             {startDate && <span className="text-slate-500"> · since {startDate}</span>}
           </p>
         </div>

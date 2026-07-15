@@ -23,9 +23,10 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Technical Rating** — per-stock Strong Sell → Strong Buy rating (−1…+1, TradingView-style two-group model) with divergence + extension flags and a signal breakdown (see below)
 - **Relative Strength vs VOO** — RSI/ADX computed on the stock÷VOO price ratio, with overbought/oversold episode markers on the chart (see below)
 - **Options Levels (MU)** — call wall / put wall / gamma flip drawn on the chart plus a GEX/P-C/IV panel, from a once-a-day FlashAlpha snapshot (see below)
+- **Sector Money Flow page** (`/money-flow`) — a separate dashboard for capital rotation across the 11 SPDR sectors + SMH/SOXX (semis) vs VOO: a sortable performance table, relative-strength sparklines, and a Relative Rotation Graph (RRG), each with its own timeframe selector (see below)
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`; a GitHub Action refreshes data every weeknight. The header shows a "Data as of" date that turns amber when data is >4 days old.
 
-The ticker list lives in one place — [`app/lib/tickers.json`](app/lib/tickers.json) — read by the UI, the API layer, and both data scripts.
+The single-stock ticker list lives in one place — [`app/lib/tickers.json`](app/lib/tickers.json) — read by the UI, the API layer, and both data scripts. The `/money-flow` page has its own ETF list in [`app/lib/sectors.json`](app/lib/sectors.json); the data scripts fetch both.
 
 ## Anchored VWAP & Earnings
 
@@ -176,6 +177,46 @@ the sentiment score (≈ 0) and than a plain 63-day relative-momentum baseline (
 **Episode events were near base rate** (n < 100 each; extremes n ≈ 15, unusable). Treat
 the badge as context, the markers as annotations — not trade signals. Not investment advice.
 
+## Sector Money Flow
+
+A **separate page at [`/money-flow`](https://stockvwap.vercel.app/money-flow)** (linked from
+the header) that tracks where capital is rotating *across sectors* instead of analyzing a
+single stock. It reads its own ETF list — [`app/lib/sectors.json`](app/lib/sectors.json): the
+**11 SPDR sector ETFs** (XLK, XLF, XLV, XLY, XLC, XLI, XLP, XLE, XLU, XLRE, XLB) plus **SMH**
+and **SOXX** (semiconductors) — all measured against **VOO** as the S&P 500 benchmark. Math
+lives in [`app/lib/moneyFlow.ts`](app/lib/moneyFlow.ts) and is served in one request by
+`app/api/money-flow`, which sends each ETF's full RS-ratio series on a shared,
+benchmark-driven date axis; the dashboards window and recompute everything **client-side**, so
+switching timeframes is instant.
+
+Three dashboards, each with its own timeframe selector:
+
+1. **Sector Performance** — a table of each ETF's % change over the chosen window
+   (1D / 5D / 1M / 3M / 6M / YTD / 1Y), sorted best-to-worst, with a center-anchored red/green
+   bar and the VOO benchmark row pinned at the bottom. Windows are calendar-anchored (YTD
+   baselines on the prior-year close, matching mainstream sector dashboards).
+2. **Relative Strength vs VOO** — small-multiple sparklines of each ETF's RS ratio
+   (`sector ÷ VOO × 100`), rebased to 100 at the window start and sorted strongest-first. A
+   rising line = gaining on the market; above 100 = outperforming over the window. Full
+   1D…1Y selector.
+3. **Relative Rotation Graph (RRG)** — the industry-standard rotation view (Julius de
+   Kempenaer / StockCharts): **RS-Ratio** (x) vs **RS-Momentum** (y), two oscillators centred
+   on 100 that place each ETF in one of four quadrants it cycles through clockwise —
+   **Improving → Leading → Weakening → Lagging**. Each dot carries a rotation tail; the
+   duration selector (1M / 3M / 6M / 1Y) sets both the normalization horizon and the tail
+   span. 1D/5D are omitted here — rotation needs enough history to normalize.
+
+The true StockCharts JdK RS-Ratio / RS-Momentum formula is proprietary; the versions here are
+a documented reproduction — a rolling z-score of the RS ratio (and of its rate of change),
+recentred on 100 and lightly smoothed. Rotation and quadrant transitions track the published
+RRGs closely; absolute levels are not identical. Quadrant colours were validated for
+colour-blind separation and contrast on the dark surface. Unit tests cover the timeframe
+windowing, RS rebasing, and per-duration RRG: `npm test`. Not investment advice.
+
+The sector ETFs ride the same pipeline as everything else — `fetch-data.mjs` and
+`download-data.py` read `sectors.json` alongside `tickers.json`, and the nightly Action keeps
+them fresh.
+
 ## Options Levels (MU)
 
 For tickers with a cached options snapshot (currently **MU** only), the page shows an
@@ -222,7 +263,7 @@ pip install yfinance
 python3 scripts/download-data.py
 ```
 
-This saves 2 years of daily OHLCV for all 11 tickers to `app/data/*.json`.
+This saves 2 years of daily OHLCV for every ticker — the single stocks in `tickers.json` plus the sector/industry ETFs in `sectors.json` — to `app/data/*.json`.
 
 ### 3. Start the dev server
 

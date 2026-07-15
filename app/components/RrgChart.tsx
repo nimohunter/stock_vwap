@@ -1,7 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { type MoneyFlowPayload, type Quadrant, QUADRANT_COLORS } from '@/app/lib/moneyFlow';
+import {
+  type MoneyFlowPayload,
+  type Quadrant,
+  type RrgTimeframe,
+  type RrgResult,
+  RRG_TIMEFRAMES,
+  RRG_CONFIGS,
+  QUADRANT_COLORS,
+  rrgFromRatioSeries,
+} from '@/app/lib/moneyFlow';
 
 interface Props {
   data: MoneyFlowPayload;
@@ -23,15 +32,21 @@ const QUADRANTS: { q: Quadrant; corner: string }[] = [
 ];
 
 export default function RrgChart({ data }: Props) {
+  const [tf, setTf] = useState<RrgTimeframe>('3M');
   const [hover, setHover] = useState<string | null>(null);
 
-  const sectors = useMemo(() => data.sectors.filter((s) => s.rrg && s.rrg.tail.length), [data]);
+  const sectors = useMemo(() => {
+    const cfg = RRG_CONFIGS[tf];
+    return data.sectors
+      .map((s) => ({ ticker: s.ticker, name: s.name, rrg: rrgFromRatioSeries(data.ratioDates, s.ratio, cfg) }))
+      .filter((s): s is { ticker: string; name: string; rrg: RrgResult } => !!s.rrg && s.rrg.tail.length > 0);
+  }, [data, tf]);
 
   const { xDom, yDom } = useMemo(() => {
     let mx = 0.5;
     let my = 0.5;
     for (const s of sectors)
-      for (const p of s.rrg!.tail) {
+      for (const p of s.rrg.tail) {
         mx = Math.max(mx, Math.abs(p.rsRatio - 100));
         my = Math.max(my, Math.abs(p.rsMomentum - 100));
       }
@@ -45,12 +60,27 @@ export default function RrgChart({ data }: Props) {
 
   return (
     <section className="bg-slate-800 rounded-lg p-4">
-      <div className="mb-3">
-        <h2 className="text-lg font-semibold text-white">Relative Rotation Graph (RRG)</h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          RS-Ratio (x) vs RS-Momentum (y) around 100, both computed against {data.benchmark.ticker}. Tails trace the
-          last ~12 weeks; sectors rotate clockwise Improving → Leading → Weakening → Lagging.
-        </p>
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Relative Rotation Graph (RRG)</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            RS-Ratio (x) vs RS-Momentum (y) around 100, vs {data.benchmark.ticker}, over a {tf} horizon. Sectors rotate
+            clockwise Improving → Leading → Weakening → Lagging.
+          </p>
+        </div>
+        <div className="flex rounded-lg overflow-hidden border border-slate-600 flex-wrap">
+          {RRG_TIMEFRAMES.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTf(t)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                tf === t ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="relative">
@@ -108,8 +138,8 @@ export default function RrgChart({ data }: Props) {
 
           {/* sector tails + heads */}
           {sectors.map((s) => {
-            const tail = s.rrg!.tail;
-            const color = QUADRANT_COLORS[s.rrg!.quadrant];
+            const tail = s.rrg.tail;
+            const color = QUADRANT_COLORS[s.rrg.quadrant];
             const active = hover === s.ticker;
             const dim = hover !== null && !active;
             const path = tail.map((p, i) => `${i ? 'L' : 'M'}${sx(p.rsRatio).toFixed(1)} ${sy(p.rsMomentum).toFixed(1)}`).join(' ');
@@ -145,6 +175,22 @@ export default function RrgChart({ data }: Props) {
             );
           })}
         </svg>
+
+        {hover && (() => {
+          const s = sectors.find((x) => x.ticker === hover);
+          if (!s) return null;
+          return (
+            <div className="absolute top-2 right-2 text-[11px] bg-slate-900/90 border border-slate-700 rounded px-2 py-1.5 pointer-events-none">
+              <div className="font-bold text-slate-100">{s.ticker} · {s.name}</div>
+              <div className="tabular-nums text-slate-300 mt-0.5" style={{ color: QUADRANT_COLORS[s.rrg.quadrant] }}>
+                {s.rrg.quadrant}
+              </div>
+              <div className="tabular-nums text-slate-400">
+                RS-Ratio {s.rrg.rsRatio.toFixed(2)} · RS-Mom {s.rrg.rsMomentum.toFixed(2)}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* legend */}

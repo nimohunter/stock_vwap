@@ -51,26 +51,28 @@ function shiftDate(dateStr: string, unit: 'm' | 'y', n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Index of the last bar on or before `targetDate` (bars ascending); -1 if none. */
-function barOnOrBefore(bars: DailyBar[], targetDate: string): number {
+/** Index of the last date on or before `targetDate` (ascending array); -1 if none. */
+function dateOnOrBefore(dates: string[], targetDate: string): number {
   let idx = -1;
-  for (let i = 0; i < bars.length; i++) {
-    if (bars[i].date <= targetDate) idx = i;
+  for (let i = 0; i < dates.length; i++) {
+    if (dates[i] <= targetDate) idx = i;
     else break;
   }
   return idx;
 }
 
 /**
- * Starting-bar index for a timeframe. 1D/5D count trading days; 1M–1Y use the
- * last bar on or before the calendar lookback date; YTD baselines on the prior
- * year's final close (so the % change is the true year-to-date move). Returns
- * null when there isn't enough history to anchor the window.
+ * Starting index for a timeframe within an ascending date array. 1D/5D count
+ * trading days; 1M–1Y use the last date on or before the calendar lookback;
+ * YTD baselines on the prior year's final close (so the % change is the true
+ * year-to-date move). Returns null when there isn't enough history to anchor
+ * the window. Exported so the client can window the RS series the same way the
+ * server windows the performance table.
  */
-function startIndexForTimeframe(bars: DailyBar[], tf: Timeframe): number | null {
-  const last = bars.length - 1;
+export function startIndexForTimeframe(dates: string[], tf: Timeframe): number | null {
+  const last = dates.length - 1;
   if (last < 1) return null;
-  const lastDate = bars[last].date;
+  const lastDate = dates[last];
 
   switch (tf) {
     case '1D':
@@ -81,32 +83,32 @@ function startIndexForTimeframe(bars: DailyBar[], tf: Timeframe): number | null 
     case '3M':
     case '6M': {
       const months = tf === '1M' ? 1 : tf === '3M' ? 3 : 6;
-      const idx = barOnOrBefore(bars, shiftDate(lastDate, 'm', months));
+      const idx = dateOnOrBefore(dates, shiftDate(lastDate, 'm', months));
       return idx >= 0 ? idx : null;
     }
     case '1Y': {
-      const idx = barOnOrBefore(bars, shiftDate(lastDate, 'y', 1));
+      const idx = dateOnOrBefore(dates, shiftDate(lastDate, 'y', 1));
       return idx >= 0 ? idx : null;
     }
     case 'YTD': {
       const yearStart = `${lastDate.slice(0, 4)}-01-01`;
       // Prior year's last close is the standard YTD baseline.
       let priorYear = -1;
-      for (let i = 0; i < bars.length; i++) {
-        if (bars[i].date < yearStart) priorYear = i;
+      for (let i = 0; i < dates.length; i++) {
+        if (dates[i] < yearStart) priorYear = i;
         else break;
       }
       if (priorYear >= 0) return priorYear;
-      // No prior-year data — fall back to the first bar of the current year.
-      for (let i = 0; i < bars.length; i++) if (bars[i].date >= yearStart) return i;
+      // No prior-year data — fall back to the first date of the current year.
+      for (let i = 0; i < dates.length; i++) if (dates[i] >= yearStart) return i;
       return null;
     }
   }
 }
 
-export function computePerf(bars: DailyBar[], tf: Timeframe): Perf {
+export function computePerf(bars: DailyBar[], tf: Timeframe, dates?: string[]): Perf {
   const last = bars[bars.length - 1].close;
-  const si = startIndexForTimeframe(bars, tf);
+  const si = startIndexForTimeframe(dates ?? bars.map((b) => b.date), tf);
   if (si === null || si >= bars.length - 1) {
     return { timeframe: tf, last, start: null, startDate: null, changeAbs: null, changePct: null };
   }
@@ -122,7 +124,8 @@ export function computePerf(bars: DailyBar[], tf: Timeframe): Perf {
 }
 
 export function computeAllPerf(bars: DailyBar[]): Perf[] {
-  return TIMEFRAMES.map((tf) => computePerf(bars, tf));
+  const dates = bars.map((b) => b.date); // built once, reused across all timeframes
+  return TIMEFRAMES.map((tf) => computePerf(bars, tf, dates));
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +177,27 @@ export const RRG_DEFAULTS: RrgConfig = {
   momentumPeriod: 10,
   tailLength: 12,
   tailStride: 5,
+};
+
+/**
+ * Durations offered on the RRG dashboard. 1D/5D are omitted deliberately —
+ * rotation needs enough history to normalize RS-Ratio/Momentum and draw a tail.
+ */
+export type RrgTimeframe = '1M' | '3M' | '6M' | '1Y';
+export const RRG_TIMEFRAMES: RrgTimeframe[] = ['1M', '3M', '6M', '1Y'];
+
+/**
+ * Per-duration RRG parameters (daily bars). The normalization `window` sets the
+ * horizon the RS-Ratio is measured against, and `tailLength × tailStride` makes
+ * the rotation tail span roughly the chosen duration.
+ */
+// tail span = tailLength × tailStride, counted in *trading days* (the ratio axis
+// is a consecutive-trading-day grid): ≈ 16 / 40 / 72 / 120 trading days.
+export const RRG_CONFIGS: Record<RrgTimeframe, RrgConfig> = {
+  '1M': { window: 20, smooth: 3, momentumPeriod: 5, tailLength: 8, tailStride: 2 },
+  '3M': { window: 40, smooth: 5, momentumPeriod: 8, tailLength: 10, tailStride: 4 },
+  '6M': { window: 60, smooth: 5, momentumPeriod: 10, tailLength: 12, tailStride: 6 },
+  '1Y': { window: 75, smooth: 8, momentumPeriod: 12, tailLength: 12, tailStride: 10 },
 };
 
 /** Rolling sample z-score; null until the trailing window is full or if any input is null. */
@@ -229,7 +253,7 @@ export interface RrgSeries {
 }
 
 /** RS-Ratio / RS-Momentum series from an aligned RS ratio (see file header). */
-export function rrgSeriesFromRatio(ratio: number[], cfg: RrgConfig = RRG_DEFAULTS): RrgSeries {
+export function rrgSeriesFromRatio(ratio: (number | null)[], cfg: RrgConfig = RRG_DEFAULTS): RrgSeries {
   const rsRatioRaw = rollingZScore(ratio, cfg.window).map((z) => (z === null ? null : 100 + z));
   const rsRatio = smaNullable(rsRatioRaw, cfg.smooth);
 
@@ -252,14 +276,20 @@ export interface RrgResult {
   tail: RrgPoint[]; // oldest → newest, last point is the current reading
 }
 
-/** Full RRG reading for one sector vs the benchmark; null with too little history. */
-export function computeRrg(
-  bars: DailyBar[],
-  benchBars: DailyBar[],
+/**
+ * Full RRG reading from an aligned RS ratio series (dates + ratio, nullable).
+ * Pure and client-reusable: the dashboard feeds it the shared ratio series it
+ * already has, so RRG can be recomputed per duration without another request.
+ * Null with too little history.
+ */
+export function rrgFromRatioSeries(
+  dates: string[],
+  ratio: (number | null)[],
   cfg: RrgConfig = RRG_DEFAULTS,
 ): RrgResult | null {
-  const { dates, ratio } = computeRatioSeries(bars, benchBars);
-  if (dates.length < cfg.window + cfg.smooth + cfg.momentumPeriod) return null;
+  // A non-null final RS-Momentum needs the ratio z-score (window) + smoothing,
+  // then the momentum diff, then a second z-score (window) + smoothing again.
+  if (dates.length < 2 * cfg.window + 2 * cfg.smooth + cfg.momentumPeriod) return null;
 
   const { rsRatio, rsMomentum } = rrgSeriesFromRatio(ratio, cfg);
 
@@ -284,6 +314,16 @@ export function computeRrg(
   };
 }
 
+/** Full RRG reading for one sector vs the benchmark; null with too little history. */
+export function computeRrg(
+  bars: DailyBar[],
+  benchBars: DailyBar[],
+  cfg: RrgConfig = RRG_DEFAULTS,
+): RrgResult | null {
+  const { dates, ratio } = computeRatioSeries(bars, benchBars);
+  return rrgFromRatioSeries(dates, ratio, cfg);
+}
+
 // ---------------------------------------------------------------------------
 // API DTOs — shared by the /api/money-flow route and the client dashboards.
 // (Defined here because this module is client-safe: no fs / server imports.)
@@ -293,14 +333,19 @@ export interface SectorPayload {
   ticker: string;
   name: string;
   perf: Perf[];
-  rrg: RrgResult | null;
-  /** RS ratio rebased to 100 at the window start; null where a date is missing. */
+  /**
+   * RS ratio (100 × sector ÷ benchmark) aligned to MoneyFlowPayload.ratioDates;
+   * null on dates the sector has no bar for (so a short-history ETF doesn't
+   * truncate the axis for others). The client windows/rebases it per timeframe
+   * (RS chart) and computes the RRG from it per duration (rrgFromRatioSeries).
+   */
   ratio: (number | null)[];
 }
 
 export interface MoneyFlowPayload {
   benchmark: { ticker: string; perf: Perf[] };
   asOf: string;
+  /** Shared date axis: the benchmark's most recent trading days. */
   ratioDates: string[];
   sectors: SectorPayload[];
 }

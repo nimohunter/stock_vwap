@@ -4,40 +4,37 @@ import {
   SECTOR_BENCHMARK,
   SECTORS,
   computeAllPerf,
-  computeRatioSeries,
-  computeRrg,
   type SectorPayload,
   type MoneyFlowPayload,
 } from '@/app/lib/moneyFlow';
 
-// Trailing window (trading days) shown in the RS-ratio line chart (dashboard 2).
-const RATIO_LOOKBACK = 252;
+// Trailing window (trading days) of RS history sent to the client. Bounds the
+// payload and comfortably covers the longest client need (1Y RS window + 1Y RRG
+// normalization warmup + tail).
+const RATIO_LOOKBACK = 400;
 
 export async function GET() {
   try {
     const benchBars = loadLocalBars(SECTOR_BENCHMARK);
-    const asOf = benchBars[benchBars.length - 1].date;
+    const benchByDate = new Map(benchBars.map((b) => [b.date, b.close]));
 
-    // Shared date axis for the ratio chart: the benchmark's last N trading days.
-    const ratioDates = benchBars.slice(-RATIO_LOOKBACK).map((b) => b.date);
+    // Axis = the benchmark's most recent trading days. Each sector aligns to it
+    // independently with nulls where it lacks a bar, so one lagging or
+    // short-history ETF never truncates the window for the others.
+    const ratioDates = benchBars
+      .slice(-RATIO_LOOKBACK)
+      .map((b) => b.date)
+      .filter((d) => benchByDate.get(d)! > 0);
+    const asOf = ratioDates[ratioDates.length - 1];
 
     const sectors: SectorPayload[] = SECTORS.map(({ ticker, name }) => {
       const bars = loadLocalBars(ticker);
-      const { dates, ratio } = computeRatioSeries(bars, benchBars);
-      const byDate = new Map(dates.map((d, i) => [d, ratio[i]]));
-
-      // Rebase to 100 at the first available point in the window so lines compare.
-      const windowVals = ratioDates.map((d) => byDate.get(d) ?? null);
-      const base = windowVals.find((v) => v !== null) ?? null;
-      const rebased = windowVals.map((v) => (v !== null && base ? (v / base) * 100 : null));
-
-      return {
-        ticker,
-        name,
-        perf: computeAllPerf(bars),
-        rrg: computeRrg(bars, benchBars),
-        ratio: rebased,
-      };
+      const closes = new Map(bars.map((b) => [b.date, b.close]));
+      const ratio = ratioDates.map((d) => {
+        const sc = closes.get(d);
+        return sc !== undefined && sc > 0 ? (sc / benchByDate.get(d)!) * 100 : null;
+      });
+      return { ticker, name, perf: computeAllPerf(bars), ratio };
     });
 
     const payload: MoneyFlowPayload = {

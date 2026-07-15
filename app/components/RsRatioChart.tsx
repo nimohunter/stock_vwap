@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { type MoneyFlowPayload, type Quadrant, QUADRANT_COLORS } from '@/app/lib/moneyFlow';
+import { type MoneyFlowPayload, type Timeframe, TIMEFRAMES, startIndexForTimeframe } from '@/app/lib/moneyFlow';
 
 interface Props {
   data: MoneyFlowPayload;
@@ -10,11 +10,6 @@ interface Props {
 const W = 260;
 const H = 64;
 const PAD = 4;
-
-const lastNonNull = (a: (number | null)[]): number | null => {
-  for (let i = a.length - 1; i >= 0; i--) if (a[i] !== null) return a[i];
-  return null;
-};
 
 /** One sector's relative-strength sparkline (RS ratio rebased to 100 at window start). */
 function Sparkline({
@@ -84,26 +79,52 @@ function Sparkline({
   );
 }
 
+const lastNonNull = (a: (number | null)[]): number | null => {
+  for (let i = a.length - 1; i >= 0; i--) if (a[i] !== null) return a[i];
+  return null;
+};
+
 export default function RsRatioChart({ data }: Props) {
-  const rows = useMemo(() => {
-    return data.sectors
+  const [tf, setTf] = useState<Timeframe>('1Y');
+
+  const { rows, windowStart } = useMemo(() => {
+    const start = startIndexForTimeframe(data.ratioDates, tf) ?? 0;
+    const dates = data.ratioDates.slice(start);
+    const rows = data.sectors
       .map((s) => {
-        const end = lastNonNull(s.ratio);
-        return { ticker: s.ticker, name: s.name, ratio: s.ratio, end, quadrant: s.rrg?.quadrant ?? null };
+        const slice = s.ratio.slice(start);
+        const base = slice.find((v) => v != null) ?? null;
+        // Rebase to 100 at the window start so every sector's line is comparable.
+        const values = slice.map((v) => (v != null && base ? (v / base) * 100 : null));
+        return { ticker: s.ticker, name: s.name, values, dates, end: lastNonNull(values) };
       })
       .sort((a, b) => (b.end ?? -Infinity) - (a.end ?? -Infinity));
-  }, [data]);
-
-  const windowStart = data.ratioDates[0];
+    return { rows, windowStart: data.ratioDates[start] };
+  }, [data, tf]);
 
   return (
     <section className="bg-slate-800 rounded-lg p-4">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-white">Relative Strength vs {data.benchmark.ticker}</h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          Sector price ÷ S&amp;P 500, rebased to 100 at {windowStart}. A rising line = the sector is gaining ground
-          on the market; above 100 = outperforming since then. Sorted strongest first.
-        </p>
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Relative Strength vs {data.benchmark.ticker}</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Sector price ÷ S&amp;P 500, rebased to 100 at {windowStart}. Rising = gaining on the market; above 100 =
+            outperforming over the window. Sorted strongest first.
+          </p>
+        </div>
+        <div className="flex rounded-lg overflow-hidden border border-slate-600 flex-wrap">
+          {TIMEFRAMES.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTf(t)}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                tf === t ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4">
         {rows.map((r) => {
@@ -117,20 +138,11 @@ export default function RsRatioChart({ data }: Props) {
                   {r.ticker}
                 </span>
                 <span className="text-xs text-slate-300 truncate flex-1">{r.name}</span>
-                {r.quadrant && (
-                  <span
-                    className="text-[9px] px-1 py-0.5 rounded font-medium"
-                    style={{ color: QUADRANT_COLORS[r.quadrant as Quadrant], borderColor: QUADRANT_COLORS[r.quadrant as Quadrant] }}
-                    title="Current RRG rotation phase"
-                  >
-                    {r.quadrant}
-                  </span>
-                )}
                 <span className={`text-xs font-semibold tabular-nums ${tone}`}>
                   {r.end != null ? `${r.end - 100 >= 0 ? '+' : ''}${(r.end - 100).toFixed(2)}%` : '—'}
                 </span>
               </div>
-              <Sparkline values={r.ratio} dates={data.ratioDates} color={line} />
+              <Sparkline values={r.values} dates={r.dates} color={line} />
             </div>
           );
         })}

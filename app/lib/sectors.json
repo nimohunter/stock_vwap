@@ -9,5 +9,7 @@
   { "ticker": "XLE",  "name": "Energy" },
   { "ticker": "XLU",  "name": "Utilities" },
   { "ticker": "XLRE", "name": "Real Estate" },
-  { "ticker": "XLB",  "name": "Materials" }
+  { "ticker": "XLB",  "name": "Materials" },
+  { "ticker": "SMH",  "name": "Semiconductors · VanEck" },
+  { "ticker": "SOXX", "name": "Semiconductors · iShares" }
 ]

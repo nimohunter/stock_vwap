@@ -5,9 +5,13 @@ import {
   computeAllPerf,
   computeRatioSeries,
   computeRrg,
+  rrgFromRatioSeries,
+  startIndexForTimeframe,
   quadrantOf,
   rrgSeriesFromRatio,
   RRG_DEFAULTS,
+  RRG_CONFIGS,
+  RRG_TIMEFRAMES,
   TIMEFRAMES,
 } from './moneyFlow';
 
@@ -73,6 +77,24 @@ describe('computePerf', () => {
   });
 });
 
+describe('startIndexForTimeframe', () => {
+  it('returns the prior trading day for 1D and 5 back for 5D', () => {
+    const dates = seq('2026-01-01', 30, () => 0).map((b) => b.date);
+    expect(startIndexForTimeframe(dates, '1D')).toBe(dates.length - 2);
+    expect(startIndexForTimeframe(dates, '5D')).toBe(dates.length - 6);
+  });
+
+  it('anchors YTD on the prior year final date', () => {
+    const dates = ['2025-12-30', '2025-12-31', '2026-01-02', '2026-01-05'];
+    expect(startIndexForTimeframe(dates, 'YTD')).toBe(1); // 2025-12-31
+  });
+
+  it('returns null when the window predates all data', () => {
+    const dates = seq('2026-06-01', 5, () => 0).map((b) => b.date);
+    expect(startIndexForTimeframe(dates, '1Y')).toBeNull();
+  });
+});
+
 describe('computeRatioSeries', () => {
   it('aligns by date and drops bars with no benchmark', () => {
     const sector = [bar('2026-01-05', 50), bar('2026-01-06', 55), bar('2026-01-07', 60)];
@@ -127,5 +149,57 @@ describe('computeRrg', () => {
     const bench = seq('2026-01-01', 20, () => 100);
     const sector = seq('2026-01-01', 20, (i) => 100 + i);
     expect(computeRrg(sector, bench)).toBeNull();
+  });
+});
+
+describe('rrgFromRatioSeries + RRG_CONFIGS', () => {
+  it('has a config for every offered duration', () => {
+    for (const tf of RRG_TIMEFRAMES) expect(RRG_CONFIGS[tf]).toBeDefined();
+  });
+
+  it('computes a reading from an aligned ratio series for each duration', () => {
+    const n = 300;
+    const dates = seq('2024-01-01', n, () => 0).map((b) => b.date);
+    const ratio = Array.from({ length: n }, (_, i) => 100 + i * 0.1); // steadily rising RS
+    for (const tf of RRG_TIMEFRAMES) {
+      const cfg = RRG_CONFIGS[tf];
+      const res = rrgFromRatioSeries(dates, ratio, cfg);
+      expect(res).not.toBeNull();
+      expect(res!.tail.length).toBeGreaterThan(0);
+      expect(['Leading', 'Weakening', 'Lagging', 'Improving']).toContain(res!.quadrant);
+    }
+  });
+
+  it('handles a nullable ratio series (leading + trailing gaps) via the last valid tail', () => {
+    const n = 300;
+    const dates = seq('2024-01-01', n, () => 0).map((b) => b.date);
+    const ratio: (number | null)[] = Array.from({ length: n }, (_, i) => 100 + i * 0.1);
+    ratio[0] = null; // leading gap (young ETF)
+    ratio[n - 1] = null; // trailing gap (sector lags the benchmark by a day)
+    const res = rrgFromRatioSeries(dates, ratio, RRG_CONFIGS['3M']);
+    expect(res).not.toBeNull();
+    expect(res!.tail.length).toBeGreaterThan(0);
+    // The current reading falls back to the last non-null point, not the null tail head.
+    expect(res!.tail[res!.tail.length - 1].date).not.toBe(dates[n - 1]);
+  });
+
+  it('returns null when history is below the (accurate) warmup requirement', () => {
+    const cfg = RRG_CONFIGS['1Y'];
+    const need = 2 * cfg.window + 2 * cfg.smooth + cfg.momentumPeriod;
+    const short = need - 10;
+    const dates = seq('2024-01-01', short, () => 0).map((b) => b.date);
+    const ratio = Array.from({ length: short }, (_, i) => 100 + i * 0.1);
+    expect(rrgFromRatioSeries(dates, ratio, cfg)).toBeNull();
+  });
+
+  it('matches computeRrg for the same underlying ratio', () => {
+    const bench = seq('2024-01-01', 200, () => 100);
+    const sector = seq('2024-01-01', 200, (i) => 50 + i * 0.2);
+    const viaBars = computeRrg(sector, bench);
+    const { dates, ratio } = computeRatioSeries(sector, bench);
+    const viaRatio = rrgFromRatioSeries(dates, ratio);
+    expect(viaRatio).not.toBeNull();
+    expect(viaRatio!.rsRatio).toBeCloseTo(viaBars!.rsRatio);
+    expect(viaRatio!.quadrant).toBe(viaBars!.quadrant);
   });
 });

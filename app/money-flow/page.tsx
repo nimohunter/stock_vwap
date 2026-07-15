@@ -40,7 +40,7 @@ export default function MoneyFlowPage() {
           <div>
             <h1 className="text-2xl font-bold text-white">Sector Money Flow</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Where capital is rotating across the 11 S&amp;P 500 sectors — performance, relative strength, and rotation.
+              Where capital is rotating across the S&amp;P 500 sectors (plus semis) — performance, relative strength, and rotation.
             </p>
             {data && (
               <p className={`text-xs mt-1 ${age > 4 ? 'text-amber-400' : 'text-slate-500'}`}>
