@@ -11,7 +11,11 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'app', 'data');
-const TICKERS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'lib', 'tickers.json'), 'utf-8'));
+const LIB_DIR = path.join(__dirname, '..', 'app', 'lib');
+const SINGLE = JSON.parse(fs.readFileSync(path.join(LIB_DIR, 'tickers.json'), 'utf-8'));
+// Sector ETFs power the money-flow page; VOO (their benchmark) is already in tickers.json.
+const SECTORS = JSON.parse(fs.readFileSync(path.join(LIB_DIR, 'sectors.json'), 'utf-8')).map((s) => s.ticker);
+const TICKERS = [...new Set([...SINGLE, ...SECTORS])];
 const ALPHA_KEY = process.env.ALPHA_VANTAGE_API_KEY ?? '';
 const STALE_DAYS = 1; // refetch if last bar is older than this many calendar days
 

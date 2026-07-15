@@ -13,7 +13,11 @@ except ImportError:
     print("Install yfinance first:  pip install yfinance")
     sys.exit(1)
 
-TICKERS = json.loads((Path(__file__).parent.parent / 'app' / 'lib' / 'tickers.json').read_text())
+LIB = Path(__file__).parent.parent / 'app' / 'lib'
+SINGLE = json.loads((LIB / 'tickers.json').read_text())
+# Sector ETFs power the money-flow page; VOO (their benchmark) is already in tickers.json.
+SECTORS = [s['ticker'] for s in json.loads((LIB / 'sectors.json').read_text())]
+TICKERS = list(dict.fromkeys([*SINGLE, *SECTORS]))
 OUT_DIR = Path(__file__).parent.parent / 'app' / 'data'
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 PERIOD = '2y'

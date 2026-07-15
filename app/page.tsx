@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import StatsPanel from './components/StatsPanel';
 import SentimentRating from './components/SentimentRating';
 import RelativeStrengthBadge from './components/RelativeStrengthBadge';
@@ -197,7 +198,15 @@ export default function Home() {
       <div className="max-w-6xl mx-auto">
         <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl font-bold text-white">Stock VWAP Analyzer</h1>
+              <Link
+                href="/money-flow"
+                className="px-3 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors"
+              >
+                Sector Money Flow →
+              </Link>
+            </div>
             <p className="text-slate-400 text-sm mt-1">2Y price history · rolling VWAP with ±1σ / ±2σ bands</p>
             {lastBarDate && (
               <p className={`text-xs mt-1 ${dataAgeDays > 4 ? 'text-amber-400' : 'text-slate-500'}`}>

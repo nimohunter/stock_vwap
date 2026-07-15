@@ -1,0 +1,13 @@
+[
+  { "ticker": "XLK",  "name": "Information Technology" },
+  { "ticker": "XLF",  "name": "Financials" },
+  { "ticker": "XLV",  "name": "Health Care" },
+  { "ticker": "XLY",  "name": "Consumer Discretionary" },
+  { "ticker": "XLC",  "name": "Communication Services" },
+  { "ticker": "XLI",  "name": "Industrials" },
+  { "ticker": "XLP",  "name": "Consumer Staples" },
+  { "ticker": "XLE",  "name": "Energy" },
+  { "ticker": "XLU",  "name": "Utilities" },
+  { "ticker": "XLRE", "name": "Real Estate" },
+  { "ticker": "XLB",  "name": "Materials" }
+]
