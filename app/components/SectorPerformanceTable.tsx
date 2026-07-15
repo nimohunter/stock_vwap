@@ -97,14 +97,14 @@ export default function SectorPerformanceTable({ data }: Props) {
   return (
     <section className="bg-slate-800 rounded-lg p-4">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold text-white">Sector Performance</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             Sector &amp; industry ETFs, sorted by return · {TF_LABEL[tf]}
             {startDate && <span className="text-slate-500"> · since {startDate}</span>}
           </p>
         </div>
-        <div className="flex rounded-lg overflow-hidden border border-slate-600 flex-wrap">
+        <div className="flex shrink-0 rounded-lg overflow-hidden border border-slate-600 flex-wrap">
           {TIMEFRAMES.map((t) => (
             <button
               key={t}

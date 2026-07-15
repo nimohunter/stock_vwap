@@ -61,14 +61,14 @@ export default function RrgChart({ data }: Props) {
   return (
     <section className="bg-slate-800 rounded-lg p-4">
       <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold text-white">Relative Rotation Graph (RRG)</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             RS-Ratio (x) vs RS-Momentum (y) around 100, vs {data.benchmark.ticker}, over a {tf} horizon. Sectors rotate
             clockwise Improving → Leading → Weakening → Lagging.
           </p>
         </div>
-        <div className="flex rounded-lg overflow-hidden border border-slate-600 flex-wrap">
+        <div className="flex shrink-0 rounded-lg overflow-hidden border border-slate-600 flex-wrap">
           {RRG_TIMEFRAMES.map((t) => (
             <button
               key={t}

@@ -105,14 +105,14 @@ export default function RsRatioChart({ data }: Props) {
   return (
     <section className="bg-slate-800 rounded-lg p-4">
       <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold text-white">Relative Strength vs {data.benchmark.ticker}</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             Sector price ÷ S&amp;P 500, rebased to 100 at {windowStart}. Rising = gaining on the market; above 100 =
             outperforming over the window. Sorted strongest first.
           </p>
         </div>
-        <div className="flex rounded-lg overflow-hidden border border-slate-600 flex-wrap">
+        <div className="flex shrink-0 rounded-lg overflow-hidden border border-slate-600 flex-wrap">
           {TIMEFRAMES.map((t) => (
             <button
               key={t}
