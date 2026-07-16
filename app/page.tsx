@@ -9,6 +9,7 @@ import RelativeStrengthBadge from './components/RelativeStrengthBadge';
 import OptionsLevelsPanel from './components/OptionsLevelsPanel';
 import FundamentalsPanel from './components/FundamentalsPanel';
 import SnapshotStrip from './components/SnapshotStrip';
+import MuuEstimator from './components/MuuEstimator';
 import { DailyBar } from './lib/bars';
 import { VwapBands } from './lib/vwap';
 import { RsResult } from './lib/relativeStrength';
@@ -340,6 +341,7 @@ export default function Home() {
               />
             </div>
             <StatsPanel currentPrice={currentPrice} bands={lastBands} />
+            <MuuEstimator symbol={symbol} bands={lastBands} />
             {options && <OptionsLevelsPanel symbol={symbol} options={options} currentPrice={currentPrice} />}
             {fundamentals && (
               <FundamentalsPanel symbol={symbol} fundamentals={fundamentals} currentPrice={currentPrice} lastBarDate={lastBarDate} />
