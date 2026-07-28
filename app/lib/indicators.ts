@@ -25,6 +25,41 @@ export function emaSeries(values: number[], period: number): number[] {
   return out;
 }
 
+/**
+ * MACD (classic 12/26/9): `macd` = EMA(fast) − EMA(slow), `signal` = EMA(signal)
+ * of the MACD line, `histogram` = macd − signal. Full-length and aligned to the
+ * input; the warm-up region is nulled (macd until `slow` bars, signal/histogram
+ * until `slow + signal - 1`) so it lines up with other series by index.
+ */
+export function macdSeries(
+  closes: number[],
+  fast = 12,
+  slow = 26,
+  signal = 9,
+): { macd: Series; signal: Series; histogram: Series } {
+  const n = closes.length;
+  const macd: Series = new Array(n).fill(null);
+  const signalOut: Series = new Array(n).fill(null);
+  const histogram: Series = new Array(n).fill(null);
+  if (n === 0) return { macd, signal: signalOut, histogram };
+
+  const emaFast = emaSeries(closes, fast);
+  const emaSlow = emaSeries(closes, slow);
+  const macdRaw = closes.map((_, i) => emaFast[i] - emaSlow[i]);
+  const signalRaw = emaSeries(macdRaw, signal);
+
+  const macdStart = slow - 1; // slow EMA has seen `slow` bars
+  const signalStart = slow - 1 + (signal - 1); // signal EMA has seen `signal` MACD values
+  for (let i = 0; i < n; i++) {
+    if (i >= macdStart) macd[i] = macdRaw[i];
+    if (i >= signalStart) {
+      signalOut[i] = signalRaw[i];
+      histogram[i] = macdRaw[i] - signalRaw[i];
+    }
+  }
+  return { macd, signal: signalOut, histogram };
+}
+
 /** Wilder's RSI; null until `period` bars are available. Last element matches a scalar RSI. */
 export function rsiSeries(closes: number[], period = 14): Series {
   const out: Series = new Array(closes.length).fill(null);

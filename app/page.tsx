@@ -24,7 +24,7 @@ const TICKERS: string[] = tickers;
 type Period = '3m' | '6m' | '1y';
 const PERIODS: Period[] = ['3m', '6m', '1y'];
 
-const MA_KEYS = ['ema10', 'ema20', 'ema50', 'ema200', 'cloud'] as const;
+const MA_KEYS = ['sma20', 'sma50', 'sma200', 'cloud', 'macd'] as const;
 type MaKey = (typeof MA_KEYS)[number];
 
 const STORAGE_KEY = 'vwap-view';
@@ -77,7 +77,7 @@ export default function Home() {
   const [period, setPeriod] = useState<Period>('1y');
   const [showVwap, setShowVwap] = useState(true);
   const [ma, setMa] = useState<Record<MaKey, boolean>>({
-    ema10: false, ema20: false, ema50: false, ema200: false, cloud: false,
+    sma20: false, sma50: false, sma200: false, cloud: false, macd: false,
   });
   const [anchor, setAnchor] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -187,11 +187,11 @@ export default function Home() {
     : null;
 
   const MA_BUTTONS: { key: MaKey; label: string; activeClass: string }[] = [
-    { key: 'ema10', label: 'EMA 10', activeClass: 'bg-orange-500' },
-    { key: 'ema20', label: 'EMA 20', activeClass: 'bg-purple-500' },
-    { key: 'ema50', label: 'EMA 50', activeClass: 'bg-cyan-500' },
-    { key: 'ema200', label: 'EMA 200', activeClass: 'bg-rose-500' },
+    { key: 'sma20', label: 'SMA 20', activeClass: 'bg-purple-500' },
+    { key: 'sma50', label: 'SMA 50', activeClass: 'bg-cyan-500' },
+    { key: 'sma200', label: 'SMA 200', activeClass: 'bg-rose-500' },
     { key: 'cloud', label: 'EMA Cloud 34/50', activeClass: 'bg-teal-500' },
+    { key: 'macd', label: 'MACD 12/26/9', activeClass: 'bg-blue-500' },
   ];
 
   return (
@@ -333,11 +333,11 @@ export default function Home() {
                 optionsLevels={options}
                 onAnchorSelect={handleAnchorSelect}
                 showVwap={showVwap}
-                showEma10={ma.ema10}
-                showEma20={ma.ema20}
-                showEma50={ma.ema50}
-                showEma200={ma.ema200}
+                showSma20={ma.sma20}
+                showSma50={ma.sma50}
+                showSma200={ma.sma200}
                 showEmaCloud={ma.cloud}
+                showMacd={ma.macd}
               />
             </div>
             <StatsPanel currentPrice={currentPrice} bands={lastBands} />
@@ -390,22 +390,26 @@ export default function Home() {
                 )}
               </>
             )}
-            {ma.ema10 && (
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-orange-400 inline-block" /> EMA 10</span>
+            {ma.sma20 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> SMA 20</span>
             )}
-            {ma.ema20 && (
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> EMA 20</span>
+            {ma.sma50 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-cyan-400 inline-block" /> SMA 50</span>
             )}
-            {ma.ema50 && (
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-cyan-400 inline-block" /> EMA 50</span>
-            )}
-            {ma.ema200 && (
-              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-rose-500 inline-block" /> EMA 200</span>
+            {ma.sma200 && (
+              <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-rose-500 inline-block" /> SMA 200</span>
             )}
             {ma.cloud && (
               <span className="flex items-center gap-1.5">
                 <span className="w-4 h-2.5 bg-teal-400/30 border-y border-y-teal-400 inline-block" /> EMA Cloud 34/50
                 <span className="text-slate-500">(green = bullish, red = bearish)</span>
+              </span>
+            )}
+            {ma.macd && (
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 bg-blue-500 inline-block" /> MACD
+                <span className="w-4 h-0.5 bg-amber-500 inline-block" /> signal (12/26/9)
+                <span className="text-slate-500">(histogram: green = above, red = below)</span>
               </span>
             )}
           </div>

@@ -9,6 +9,7 @@ import {
   emaSeries,
   findPivots,
   lastVal,
+  macdSeries,
   mfiSeries,
   momentumSeries,
   percentile,
@@ -39,6 +40,28 @@ describe('emaSeries', () => {
   });
   it('tracks a constant series exactly', () => {
     expect(emaSeries([7, 7, 7, 7], 3)).toEqual([7, 7, 7, 7]);
+  });
+});
+
+describe('macdSeries', () => {
+  it('is full length with a nulled warm-up and histogram = macd - signal', () => {
+    const closes = Array.from({ length: 60 }, (_, i) => 100 + i);
+    const { macd, signal, histogram } = macdSeries(closes, 12, 26, 9);
+    expect(macd).toHaveLength(60);
+    expect(signal).toHaveLength(60);
+    // macd valid from index slow-1 = 25; signal/histogram from 25 + 9-1 = 33.
+    expect(macd[24]).toBeNull();
+    expect(macd[25]).not.toBeNull();
+    expect(signal[32]).toBeNull();
+    expect(signal[33]).not.toBeNull();
+    for (let i = 33; i < 60; i++) {
+      expect(histogram[i]).toBeCloseTo((macd[i] as number) - (signal[i] as number), 9);
+    }
+  });
+  it('is all-null when there are fewer bars than the warm-up needs', () => {
+    const { macd, signal } = macdSeries([1, 2, 3], 12, 26, 9);
+    expect(macd.every((v) => v === null)).toBe(true);
+    expect(signal.every((v) => v === null)).toBe(true);
   });
 });
 

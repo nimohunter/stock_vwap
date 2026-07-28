@@ -17,7 +17,8 @@ import {
   IPriceLine,
 } from 'lightweight-charts';
 import { DailyBar } from '@/app/lib/bars';
-import { VwapBands, computeEMA } from '@/app/lib/vwap';
+import { VwapBands, computeEMA, computeSMA } from '@/app/lib/vwap';
+import { macdSeries } from '@/app/lib/indicators';
 import { RsEvent, eventsToEpisodes } from '@/app/lib/relativeStrength';
 import { EmaCloudPrimitive, CloudPoint } from './emaCloudPrimitive';
 import { RsEpisodePrimitive } from './rsEpisodePrimitive';
@@ -31,11 +32,11 @@ interface Props {
   optionsLevels?: { callWall: number | null; putWall: number | null; gammaFlip: number | null } | null;
   onAnchorSelect?: (date: string) => void;
   showVwap?: boolean;
-  showEma10?: boolean;
-  showEma20?: boolean;
-  showEma50?: boolean;
-  showEma200?: boolean;
+  showSma20?: boolean;
+  showSma50?: boolean;
+  showSma200?: boolean;
   showEmaCloud?: boolean;
+  showMacd?: boolean;
 }
 
 type CandleSeries = ISeriesApi<'Candlestick'>;
@@ -64,11 +65,11 @@ export default function VwapChart({
   optionsLevels = null,
   onAnchorSelect,
   showVwap = true,
-  showEma10 = false,
-  showEma20 = false,
-  showEma50 = false,
-  showEma200 = false,
+  showSma20 = false,
+  showSma50 = false,
+  showSma200 = false,
   showEmaCloud = false,
+  showMacd = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -79,13 +80,15 @@ export default function VwapChart({
   const b0Ref  = useRef<LineSer | null>(null);
   const b1lRef = useRef<LineSer | null>(null);
   const b2lRef = useRef<LineSer | null>(null);
-  const ema10LineRef = useRef<LineSer | null>(null);
-  const ema20LineRef = useRef<LineSer | null>(null);
+  const sma20Ref  = useRef<LineSer | null>(null);
+  const sma50Ref  = useRef<LineSer | null>(null);
+  const sma200Ref = useRef<LineSer | null>(null);
   const ema34Ref  = useRef<LineSer | null>(null);
   const ema50Ref  = useRef<LineSer | null>(null);
   const cloudRef  = useRef<EmaCloudPrimitive | null>(null);
-  const ema50LineRef  = useRef<LineSer | null>(null);
-  const ema200LineRef = useRef<LineSer | null>(null);
+  const macdLineRef   = useRef<LineSer | null>(null);
+  const macdSignalRef = useRef<LineSer | null>(null);
+  const macdHistRef   = useRef<HistSeries | null>(null);
   const avwapRef   = useRef<LineSer | null>(null);
   const avwap1uRef = useRef<LineSer | null>(null);
   const avwap1lRef = useRef<LineSer | null>(null);
@@ -140,9 +143,10 @@ export default function VwapChart({
     b0Ref.current  = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 2, lastValueVisible: true, priceLineVisible: false });
     b1lRef.current = chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, ...BAND_OPTS });
     b2lRef.current = chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, ...BAND_OPTS });
-    // Fast EMA stack legs (10/20); with EMA 50 they form the 10>20>50 trend stack.
-    ema10LineRef.current = chart.addSeries(LineSeries, { color: '#fb923c', lineWidth: 2, visible: false, ...BAND_OPTS });
-    ema20LineRef.current = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, visible: false, ...BAND_OPTS });
+    // Simple moving averages (20/50/200) — the primary trend-stack overlays.
+    sma20Ref.current  = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, visible: false, ...BAND_OPTS });
+    sma50Ref.current  = chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, visible: false, ...BAND_OPTS });
+    sma200Ref.current = chart.addSeries(LineSeries, { color: '#f43f5e', lineWidth: 2, visible: false, ...BAND_OPTS });
 
     // Ripster EMA Cloud (34/50): two thin boundary lines + a trend-colored fill primitive.
     ema34Ref.current = chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 1, visible: false, ...BAND_OPTS });
@@ -150,9 +154,29 @@ export default function VwapChart({
     cloudRef.current = new EmaCloudPrimitive();
     candleRef.current.attachPrimitive(cloudRef.current);
 
-    // Standalone EMA 50 / EMA 200 lines (exponential counterparts to the SMA lines).
-    ema50LineRef.current  = chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, visible: false, ...BAND_OPTS });
-    ema200LineRef.current = chart.addSeries(LineSeries, { color: '#f43f5e', lineWidth: 2, visible: false, ...BAND_OPTS });
+    // MACD (12/26/9) in its own pane below price: histogram + MACD line + signal line.
+    macdHistRef.current = chart.addSeries(
+      HistogramSeries,
+      { priceFormat: { type: 'price', precision: 2, minMove: 0.01 }, base: 0, visible: false, ...BAND_OPTS },
+      1,
+    );
+    macdLineRef.current = chart.addSeries(
+      LineSeries,
+      { color: '#3b82f6', lineWidth: 2, visible: false, ...BAND_OPTS },
+      1,
+    );
+    macdSignalRef.current = chart.addSeries(
+      LineSeries,
+      { color: '#f59e0b', lineWidth: 2, visible: false, ...BAND_OPTS },
+      1,
+    );
+    macdLineRef.current.createPriceLine({ price: 0, color: '#475569', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false });
+    // Give the price pane most of the height; the MACD pane starts collapsed until toggled on.
+    const panes = chart.panes();
+    if (panes.length > 1) {
+      panes[0].setStretchFactor(3);
+      panes[1].setStretchFactor(0.0001);
+    }
 
     // Anchored VWAP: solid amber line with dashed ±1σ.
     avwapRef.current   = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, lastValueVisible: true, priceLineVisible: false });
@@ -191,22 +215,36 @@ export default function VwapChart({
         color: b.close >= b.open ? '#22c55e60' : '#ef444460',
       }))
     );
-    ema10LineRef.current?.setData(
-      computeEMA(bars, 10).map((p) => ({ time: toTime(p.date), value: p.value }))
+    sma20Ref.current?.setData(
+      computeSMA(bars, 20).map((p) => ({ time: toTime(p.date), value: p.value }))
     );
-    ema20LineRef.current?.setData(
-      computeEMA(bars, 20).map((p) => ({ time: toTime(p.date), value: p.value }))
+    sma50Ref.current?.setData(
+      computeSMA(bars, 50).map((p) => ({ time: toTime(p.date), value: p.value }))
+    );
+    sma200Ref.current?.setData(
+      computeSMA(bars, 200).map((p) => ({ time: toTime(p.date), value: p.value }))
+    );
+
+    // MACD (12/26/9): index-aligned to bars; drop the nulled warm-up region.
+    const { macd, signal, histogram } = macdSeries(bars.map((b) => b.close));
+    macdLineRef.current?.setData(
+      bars.flatMap((b, i) => (macd[i] === null ? [] : [{ time: toTime(b.date), value: macd[i] as number }]))
+    );
+    macdSignalRef.current?.setData(
+      bars.flatMap((b, i) => (signal[i] === null ? [] : [{ time: toTime(b.date), value: signal[i] as number }]))
+    );
+    macdHistRef.current?.setData(
+      bars.flatMap((b, i) =>
+        histogram[i] === null
+          ? []
+          : [{ time: toTime(b.date), value: histogram[i] as number, color: (histogram[i] as number) >= 0 ? '#22c55e80' : '#ef444480' }]
+      )
     );
 
     const ema34 = computeEMA(bars, 34);
     const ema50 = computeEMA(bars, 50);
-    const ema50Data = ema50.map((p) => ({ time: toTime(p.date), value: p.value }));
     ema34Ref.current?.setData(ema34.map((p) => ({ time: toTime(p.date), value: p.value })));
-    ema50Ref.current?.setData(ema50Data);
-    ema50LineRef.current?.setData(ema50Data);
-    ema200LineRef.current?.setData(
-      computeEMA(bars, 200).map((p) => ({ time: toTime(p.date), value: p.value }))
-    );
+    ema50Ref.current?.setData(ema50.map((p) => ({ time: toTime(p.date), value: p.value })));
     // Merge into cloud points on dates where both EMAs exist.
     const fastByDate = new Map(ema34.map((p) => [p.date, p.value]));
     const cloud: CloudPoint[] = [];
@@ -226,12 +264,16 @@ export default function VwapChart({
   }, [showVwap]);
 
   useEffect(() => {
-    ema10LineRef.current?.applyOptions({ visible: showEma10 });
-  }, [showEma10]);
+    sma20Ref.current?.applyOptions({ visible: showSma20 });
+  }, [showSma20]);
 
   useEffect(() => {
-    ema20LineRef.current?.applyOptions({ visible: showEma20 });
-  }, [showEma20]);
+    sma50Ref.current?.applyOptions({ visible: showSma50 });
+  }, [showSma50]);
+
+  useEffect(() => {
+    sma200Ref.current?.applyOptions({ visible: showSma200 });
+  }, [showSma200]);
 
   useEffect(() => {
     ema34Ref.current?.applyOptions({ visible: showEmaCloud });
@@ -240,12 +282,16 @@ export default function VwapChart({
   }, [showEmaCloud]);
 
   useEffect(() => {
-    ema50LineRef.current?.applyOptions({ visible: showEma50 });
-  }, [showEma50]);
-
-  useEffect(() => {
-    ema200LineRef.current?.applyOptions({ visible: showEma200 });
-  }, [showEma200]);
+    macdHistRef.current?.applyOptions({ visible: showMacd });
+    macdLineRef.current?.applyOptions({ visible: showMacd });
+    macdSignalRef.current?.applyOptions({ visible: showMacd });
+    // Collapse the MACD pane's height when it's off so it doesn't steal price-chart space.
+    const panes = chartRef.current?.panes();
+    if (panes && panes.length > 1) {
+      panes[0].setStretchFactor(showMacd ? 3 : 1);
+      panes[1].setStretchFactor(showMacd ? 1 : 0.0001);
+    }
+  }, [showMacd]);
 
   useEffect(() => {
     if (!b0Ref.current || vwapBands.length === 0) return;

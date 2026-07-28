@@ -17,7 +17,8 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
 - **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
 - **11 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, MU, VOO, SPMO, GLD
-- **Moving Averages** — toggleable EMA 10/20/50/200 overlays (the 10/20/50 trend stack + the long-term 200)
+- **Moving Averages** — toggleable SMA 20/50/200 overlays (the classic trend stack + the long-term 200)
+- **MACD (12/26/9)** — the classic MACD in its own pane below price: MACD line, signal line, and a zero-centered green/red histogram (see below)
 - **Ripster EMA Cloud 34/50** — trend-colored cloud between the 34 and 50 EMAs (see below)
 - **Stats Panel** — current price, VWAP value, % distance, SD zone (e.g. "+1σ to +2σ")
 - **Technical Rating** — per-stock Strong Sell → Strong Buy rating (−1…+1, TradingView-style two-group model) with divergence + extension flags and a signal breakdown (see below)
@@ -61,20 +62,31 @@ On the page this powers:
   `app/api/analysis-prompt` ([`app/lib/analysisPrompt.ts`](app/lib/analysisPrompt.ts)).
   Paste it into any LLM chat for a technical + fundamental read. Not investment advice.
 
-## Moving Averages & Ripster EMA Cloud
+## Moving Averages, MACD & Ripster EMA Cloud
 
-The **Moving Averages** control group toggles four overlay lines plus the EMA cloud,
-all computed in [`app/lib/vwap.ts`](app/lib/vwap.ts) and drawn in
+The **Moving Averages** control group toggles the SMA overlays, the MACD pane, and the
+EMA cloud — all computed in [`app/lib/vwap.ts`](app/lib/vwap.ts) /
+[`app/lib/indicators.ts`](app/lib/indicators.ts) and drawn in
 [`app/components/VwapChart.tsx`](app/components/VwapChart.tsx):
 
 | Overlay | Color | Calculation |
 |---------|-------|-------------|
-| EMA 10 / EMA 20 | orange / purple | Fast trend-stack legs (with EMA 50: bullish when 10>20>50) |
-| EMA 50 / EMA 200 | cyan / rose | Exponential moving average, `k = 2 / (window + 1)` |
+| SMA 20 | purple | Simple moving average — fast trend leg |
+| SMA 50 | cyan | Simple moving average — medium trend leg (bullish stack when 20>50>200) |
+| SMA 200 | rose | Simple moving average — long-term trend (needs the 1Y window to draw) |
+| MACD 12/26/9 | blue / amber + green/red bars | Separate pane (see below) |
 | EMA Cloud 34/50 | teal fill | Filled band between the EMA 34 and EMA 50 |
 
-The snapshot strip above the chart reports the current **EMA 10/20/50 stack** state
-(bullish / bearish / mixed) so you can check the stack without toggling the overlays on.
+The snapshot strip above the chart independently reports an **EMA 10/20/50 stack** read
+(bullish / bearish / mixed) as a quick trend gauge, separate from the SMA overlays.
+
+**MACD (12/26/9).** The classic MACD renders in its own oscillator pane below the price
+chart: the **MACD line** (EMA 12 − EMA 26, blue), the **signal line** (EMA 9 of the MACD
+line, amber), and a **zero-centered histogram** (MACD − signal; green above zero, red
+below) with a dotted zero reference. The pane starts collapsed and expands only when MACD
+is toggled on, so it never steals price-chart height when off. Math in
+[`macdSeries`](app/lib/indicators.ts); the same 12/26/9 also feeds one of the Oscillator
+votes in the Technical Rating.
 
 **EMA seeding.** The EMA is seeded with the SMA of the first `window` closes, then
 iterated as `ema = close·k + ema_prev·(1 − k)`. This matches TradingView's `ta.ema`
