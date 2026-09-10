@@ -6,6 +6,7 @@
     "predev": "node scripts/fetch-data.mjs && node scripts/fetch-options-data.mjs",
     "dev": "next dev",
     "prebuild": "node scripts/fetch-data.mjs && node scripts/fetch-options-data.mjs",
+    "verify-data": "node scripts/fetch-data.mjs --verify",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

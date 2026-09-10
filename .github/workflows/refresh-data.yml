@@ -4,6 +4,10 @@ on:
   schedule:
     # Weeknights at 22:30 UTC — after US market close (20:00 UTC EDT / 21:00 UTC EST)
     - cron: '30 22 * * 1-5'
+    # Catch-up the next morning (11:30 UTC / 07:30 ET, before the open). GitHub often starts
+    # scheduled jobs an hour or two late, and the evening run has repeatedly come back a
+    # session short (see the freshness gate below); by this hour the daily bars are final.
+    - cron: '30 11 * * 2-6'
   workflow_dispatch: {}
 
 permissions:
@@ -49,3 +53,11 @@ jobs:
             git commit -m "chore(data): daily refresh"
             git push
           fi
+
+      # Runs AFTER the commit on purpose: whatever data did arrive is already saved, and
+      # this step is what turns the run red when the committed set is still a session
+      # behind. Without it a refresh that added no new trading day looked identical to a
+      # healthy one — a green check and a "chore(data): daily refresh" commit made only of
+      # volume revisions.
+      - name: Verify data freshness
+        run: node scripts/fetch-data.mjs --verify
