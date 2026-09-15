@@ -15,7 +15,7 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Shareable / Persistent Views** — symbol, VWAP window, MA toggles, and anchor live in the URL and are remembered across visits
 - **Full 2Y Price History** — chart always shows all available data; window controls only the VWAP computation
 - **±1σ / ±2σ Standard Deviation Bands** — 5-line display (red/yellow/blue/green/pink)
-- **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume`
+- **Typical Price Formula** — VWAP computed as `(High + Low + Close) / 3 × Volume` (`hlc3`, the same source TradingView uses — see [How VWAP is calculated](#how-vwap-is-calculated))
 - **11 Pre-loaded Tickers** — NVDA, META, GOOGL, AAPL, MSFT, AMZN, TSLA, MU, VOO, SPMO, GLD
 - **Moving Averages** — toggleable SMA 20/50/200 overlays (the classic trend stack + the long-term 200)
 - **MACD (12/26/9)** — the classic MACD in its own pane below price: MACD line, signal line, and a zero-centered green/red histogram (see below)
@@ -28,6 +28,65 @@ A personal web app for VWAP analysis on US stocks, deployed to Vercel. Built wit
 - **Auto Data Refresh** — `fetch-data.mjs` runs before every `dev` and `build`; a GitHub Action refreshes data every weeknight. The header shows a "Data as of" date that turns amber when data is >4 days old.
 
 The single-stock ticker list lives in one place — [`app/lib/tickers.json`](app/lib/tickers.json) — read by the UI, the API layer, and both data scripts. The `/money-flow` page has its own ETF list in [`app/lib/sectors.json`](app/lib/sectors.json); the data scripts fetch both.
+
+## How VWAP is calculated
+
+Every bar is weighted by its volume, so a heavy trading day pulls the line toward its price
+more than a quiet day does:
+
+    VWAP = sum(price * volume) / sum(volume)
+
+`price` is the typical price of the bar, `hlc3 = (high + low + close) / 3`. **This is the same
+source TradingView uses by default, so the source is not why the two lines differ.** The
+source barely changes the answer. Measured on NVDA over a 60 bar anchor, the four common
+sources land within 0.03% of each other:
+
+| Source | Formula | NVDA anchored VWAP |
+|--------|---------|--------------------|
+| `hlc3` (used here, and TradingView's default) | `(H + L + C) / 3` | 209.9119 |
+| `hl2` | `(H + L) / 2` | 209.9312 |
+| `ohlc4` | `(O + H + L + C) / 4` | 209.9356 |
+| `close` | `C` | 209.8734 |
+
+The bands are the volume weighted standard deviation of the same price around the VWAP:
+
+    sd = sqrt( sum(price^2 * volume) / sum(volume) - VWAP^2 )
+
+### Why it will not match TradingView
+
+There are two variants, and only one of them has a TradingView equivalent.
+
+**Rolling VWAP (the 3M / 6M / 1Y toggle) has no TradingView equivalent.** It slides a window
+of 63, 126 or 252 bars, dropping the oldest bar as each new bar arrives. Every TradingView
+VWAP instead starts at an anchor or a session boundary and accumulates forward without ever
+dropping a bar. These are different calculations, so the lines will never agree.
+
+The window matters far more than the source. Same NVDA bars, same day:
+
+| Window | VWAP |
+|--------|------|
+| 63 bars (3M) | 209.58 |
+| 126 bars (6M) | 204.10 |
+| 252 bars (1Y) | 193.48 |
+
+That is an 8% spread, against 0.03% for the source. **If a VWAP looks wrong, check the window
+before you check anything else.**
+
+**Anchored VWAP does correspond to TradingView's "VWAP Anchored" and "VWAP Auto Anchored".**
+To make the two agree, four things must match:
+
+1. **The anchor date.** "Auto Anchored" picks its own anchor and moves it as the chart
+   changes. Set TradingView to a fixed anchor on the same day. This is the usual cause of a
+   large gap.
+2. **The chart timeframe.** The data here is daily. An intraday TradingView chart accumulates
+   intraday bars and reaches a different number from the same anchor date.
+3. **The volume feed.** These bars come from Yahoo, which reports consolidated US volume.
+   TradingView uses its own exchange feed. Different volume means different weights, so a
+   small difference remains even when everything else matches.
+4. **Whether the anchor bar is counted.** It is counted here: the anchor day's own bar is the
+   first bar of the accumulation.
+
+Math lives in [`app/lib/vwap.ts`](app/lib/vwap.ts), which carries the same notes inline.
 
 ## Anchored VWAP & Earnings
 
